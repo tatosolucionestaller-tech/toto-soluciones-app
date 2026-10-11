@@ -1,0 +1,11 @@
+TATO SOLUCIONES v8 — PRUEBA EN PC Y CELULAR
+
+1. Descomprime este ZIP en una carpeta nueva.
+2. Abre la carpeta tato_web_pwa con Visual Studio Code.
+3. En Terminal escribe: python -m http.server 5500 --bind 0.0.0.0
+4. En el PC abre: http://127.0.0.1:5500/
+5. En el celular conectado a la misma Wi-Fi abre: http://IP_DEL_PC:5500/
+6. La portada index.html abre la DEMOSTRACION OPERATIVA LOCAL, sin registro obligatorio. Prueba el formulario, Centro de Control, agenda, repuestos, presupuestos y documentos.
+7. Para ver la app anterior conectable a Supabase, abre: http://127.0.0.1:5500/app-real.html . Requiere config.js y configuración de Auth.
+
+AVISO: no ingresar datos personales ni documentos reales en la demostración. Los datos se guardan únicamente en localStorage de ese navegador y no se sincronizan con el celular. La demo no es el backend real.
