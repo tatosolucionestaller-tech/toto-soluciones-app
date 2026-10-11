@@ -3,3 +3,6 @@
 
 /* Formulario: selector de servicio auditado */
 .form-card select{display:block;width:100%;padding:13px 14px;border:1px solid #cbd1d6;border-radius:7px;background:#fff;color:#1d2328;font:inherit}.form-card select:focus{outline:2px solid #147a36;outline-offset:2px}
+
+/* Selector de cita: pasos claros en móvil y escritorio */
+.appointment-picker{background:#f7faf8;border:1px solid #c9ded0;border-radius:12px;padding:20px;margin:20px 0}.appointment-title{display:block;font-size:18px;color:#173e27}.appointment-help{font-size:13px;color:#4c5a51;margin:8px 0 18px}.appointment-picker label{margin-top:15px}.appointment-picker select{min-height:50px;background:white}.appointment-picker select:disabled{background:#edf0ee;color:#737b75}.appointment-summary{background:#e7f3e9;color:#18572e;border-left:4px solid #147a36;padding:12px 14px;border-radius:5px;font-size:13px;font-weight:700;margin:18px 0 10px}.appointment-picker small{display:block;margin-top:7px;line-height:1.5}
