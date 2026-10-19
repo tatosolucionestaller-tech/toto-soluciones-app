@@ -11,18 +11,67 @@ let currentUser=null,isStaff=false;
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
-function showTab(tab){for(const id of ['new','mine','staff']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();}}
+function showTab(tab){for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function record(item,staff=false){const wrap=node('article',undefined,'record');wrap.append(node('strong',`${item.make||'Vehículo'} ${item.model||''} · ${item.plate||'Sin patente'}`),node('small',`${new Date(item.created_at).toLocaleDateString('es-CL')} · ${labels[item.status]||item.status}`),node('p',item.complaint),node('small',`Cliente: ${item.customer_name} · ${item.customer_phone}`));if(item.preferred_at)wrap.append(node('p',`Fecha solicitada: ${new Date(item.preferred_at).toLocaleString('es-CL')}`));if(staff && validTransitions[item.status]?.length){const sel=node('select');sel.append(new Option('Cambiar estado…',''));for(const status of validTransitions[item.status])sel.append(new Option(labels[status],status));sel.addEventListener('change',async()=>{if(!sel.value)return;sel.disabled=true;const {error}=await db.from('service_requests').update({status:sel.value}).eq('id',item.id);notice(error?`No se pudo actualizar: ${error.message}`:'Estado actualizado');await loadStaff();});wrap.append(sel);}return wrap;}
+
+/* Control Center: solo consultas RLS, sin datos personales ni credenciales en indicadores. */
+let dashboardLoadNonce=0;
+async function loadDashboard(){
+ if(!db||!isStaff||!currentUser)return;
+ const ticket=++dashboardLoadNonce,userId=currentUser.id;
+ const cards=$('dashboardCards'),stations=$('dashboardStations'),alerts=$('dashboardAlerts');
+ cards.replaceChildren(node('p','Cargando indicadores…'));stations.replaceChildren();alerts.replaceChildren();
+ const metrics=[
+  {key:'total',label:'Solicitudes totales',table:'service_requests'},
+  {key:'pending',label:'Por revisar',table:'service_requests',column:'status',value:'received'},
+  {key:'confirmed',label:'Confirmadas',table:'service_requests',column:'status',value:'confirmed'},
+  {key:'workshop',label:'En taller',table:'service_requests',column:'status',value:'in_workshop'},
+  {key:'finished',label:'Finalizadas',table:'service_requests',column:'status',value:'completed'},
+  {key:'quotes',label:'Presupuestos por aprobar',table:'intake_workflow',column:'quote_status',value:'offered'},
+  {key:'approved',label:'Presupuestos aprobados',table:'intake_workflow',column:'quote_status',value:'approved'},
+  {key:'orders',label:'Órdenes de reparación',table:'repair_orders'}
+ ];
+ const [counts,stationResult]=await Promise.all([
+   Promise.all(metrics.map(async m=>{
+    let q=db.from(m.table).select('*',{count:'exact',head:true});
+    if(m.column)q=q.eq(m.column,m.value);
+    const {count,error}=await q;
+    return {...m,count,error};
+   })),
+   db.from('workstations').select('id,name,active').order('id')
+ ]);
+ if(ticket!==dashboardLoadNonce||!isStaff||currentUser?.id!==userId)return;
+ cards.replaceChildren();
+ for(const m of counts){
+  const tile=node('div',undefined,'metric');
+  tile.append(node('strong',m.error?'—':String(m.count??0)),node('span',m.label));
+  if(m.error)tile.append(node('small','Sin permiso o sin conexión'));
+  cards.append(tile);
+ }
+ if(stationResult.error)stations.append(node('p','No fue posible consultar los puestos.'));
+ else if(!stationResult.data?.length)stations.append(node('p','No hay puestos registrados.'));
+ else for(const s of stationResult.data){
+  const chip=node('span',s.name||'Puesto '+s.id,'station-chip'+(s.active?'':' inactive'));
+  chip.title=s.active?'Puesto activo':'Puesto deshabilitado';stations.append(chip);
+ }
+ const data=Object.fromEntries(counts.filter(x=>!x.error).map(x=>[x.key,x.count??0]));
+ if(counts.some(x=>x.error))alerts.append(node('p','Algunos indicadores no pudieron consultarse. Revisa permisos y conectividad.'));
+ if(data.total===0)alerts.append(node('p','No hay solicitudes registradas. Realiza una prueba de recepción y verifica el correo antes de usar la aplicación con clientes reales.'));
+ if(data.pending>0)alerts.append(node('p',data.pending+' solicitud(es) pendiente(s) de revisión.'));
+ if(data.quotes>0)alerts.append(node('p',data.quotes+' presupuesto(s) esperando la decisión de los clientes.'));
+ if(!alerts.childNodes.length)alerts.append(node('p','Sin alertas operativas según los registros actuales.'));
+}
+
 async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
 async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','No hay solicitudes.'));else data.forEach(item=>list.append(record(item,true)));const picker=$('workflowRequest');const chosen=picker.value;picker.replaceChildren(new Option('Selecciona una solicitud',''));for(const item of data||[])picker.append(new Option(`${item.plate||'Sin patente'} · ${item.customer_name} · ${labels[item.status]||item.status}`,item.id));if(data?.some(x=>x.id===chosen))picker.value=chosen;}
-let sessionVersion=0;async function sessionChanged(session){const version=++sessionVersion;currentUser=session?.user||null;isStaff=false;$('tabStaff').hidden=true;$('staff').hidden=true;$('staffList').replaceChildren();$('mineList').replaceChildren();$('myQuotes').replaceChildren();$('auth').hidden=!!currentUser;$('app').hidden=!currentUser;$('logout').hidden=!currentUser;if(!currentUser)return;const {data}=await db.from('staff_profiles').select('role,active').eq('user_id',currentUser.id).maybeSingle();if(version!==sessionVersion||!currentUser)return;isStaff=!!data?.active;$('tabStaff').hidden=!isStaff;showTab('new');}
+let sessionVersion=0;async function sessionChanged(session){const version=++sessionVersion;currentUser=session?.user||null;isStaff=false;$('tabStaff').hidden=true;$('tabDashboard').hidden=true;$('staff').hidden=true;$('dashboard').hidden=true;$('staffList').replaceChildren();$('mineList').replaceChildren();$('myQuotes').replaceChildren();$('auth').hidden=!!currentUser;$('app').hidden=!currentUser;$('logout').hidden=!currentUser;if(!currentUser)return;const {data}=await db.from('staff_profiles').select('role,active').eq('user_id',currentUser.id).maybeSingle();if(version!==sessionVersion||!currentUser)return;isStaff=!!data?.active;$('tabStaff').hidden=!isStaff;$('tabDashboard').hidden=!isStaff;showTab('new');}
 if(!configured){$('setup').hidden=false;$('auth').hidden=true;}else{db.auth.getSession().then(({data})=>sessionChanged(data.session));db.auth.onAuthStateChange((event,session)=>{sessionChanged(session);if(event==='PASSWORD_RECOVERY'){$('auth').hidden=false;$('newPasswordForm').hidden=false;notice('Escribe tu nueva contraseña.');}});}
 $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!db)return;const f=new FormData(e.target);const {error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});notice(error?`No se pudo ingresar: ${error.message}`:'Sesión iniciada');});
 $('signup').addEventListener('click',async()=>{const f=new FormData($('authForm'));const email=String(f.get('email')||'');const password=String(f.get('password')||'');if(!email||password.length<8)return notice('Ingresa un correo y una contraseña de al menos 8 caracteres.');const {error}=await db.auth.signUp({email,password});notice(error?error.message:'Revisa tu correo para verificar la cuenta, si la confirmación está habilitada.');});
 $('reset').addEventListener('click',async()=>{const email=String(new FormData($('authForm')).get('email')||'');if(!email)return notice('Escribe tu correo primero.');const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});notice(error?error.message:'Si existe una cuenta, recibirás un correo con instrucciones.');});
 $('newPasswordForm').addEventListener('submit',async e=>{e.preventDefault();const password=String(new FormData(e.target).get('new_password')||'');if(password.length<10)return notice('La contraseña debe tener al menos 10 caracteres.');const {error}=await db.auth.updateUser({password});if(error)return notice('No se pudo actualizar: '+error.message);$('newPasswordForm').hidden=true;notice('Contraseña actualizada.');});
-$('logout').addEventListener('click',()=>db.auth.signOut());$('tabNew').addEventListener('click',()=>showTab('new'));$('tabMine').addEventListener('click',()=>showTab('mine'));$('tabStaff').addEventListener('click',()=>showTab('staff'));
+$('logout').addEventListener('click',()=>db.auth.signOut());$('tabNew').addEventListener('click',()=>showTab('new'));$('tabMine').addEventListener('click',()=>showTab('mine'));$('tabStaff').addEventListener('click',()=>showTab('staff'));$('tabDashboard').addEventListener('click',()=>showTab('dashboard'));$('refreshDashboard').addEventListener('click',()=>loadDashboard());$('dashboardGoStaff').addEventListener('click',()=>showTab('staff'));
 $('requestForm').addEventListener('submit',async e=>{e.preventDefault();if(!currentUser)return notice('Debes iniciar sesión.');const button=$('send');button.disabled=true;const f=new FormData(e.target);const str=k=>String(f.get(k)||'').trim();const plate=str('plate').toUpperCase();if(plate&&!/^[A-Z0-9]{5,8}$/.test(plate)){button.disabled=false;return notice('Revisa el formato de patente.');}const payload={customer_user_id:currentUser.id,customer_name:str('customer_name'),customer_phone:str('customer_phone'),customer_email:str('customer_email'),complaint:str('complaint'),plate:plate||null,make:str('make')||null,model:str('model')||null,model_year:str('model_year')?Number(str('model_year')):null,engine:str('engine')||null,vin:str('vin')||null,odometer_km:str('odometer_km')?Number(str('odometer_km')):null,preferred_at:str('preferred_at')?chileLocalToIso(str('preferred_at')):null};const {error}=await db.from('service_requests').insert(payload);button.disabled=false;if(error)return notice(`No se pudo enviar: ${error.message}`);e.target.reset();notice('Solicitud recibida. La fecha queda pendiente de confirmación por el taller.');showTab('mine');});
 if('serviceWorker' in navigator && location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
