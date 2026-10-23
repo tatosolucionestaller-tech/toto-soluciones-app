@@ -32,4 +32,39 @@ $('intake').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);const
 $('partForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),v=k=>String(f.get(k)||'').trim();if(data.parts.some(p=>p.sku.toLowerCase()===v('sku').toLowerCase()))return notice('Código ya existe');const nums=['qty','min','cost','price'].map(k=>safeNumber(v(k)));if(nums.includes(null))return notice('Números inválidos');const part={id:'p'+Date.now(),sku:v('sku'),name:v('name'),qty:nums[0],min:nums[1],cost:nums[2],price:nums[3]};data.parts.push(part);recordMove(part,0,part.qty,'Stock inicial (demo)');save();e.target.reset();render();notice('Repuesto de demostración agregado.')};
 $('resetDemo').onclick=()=>{if(!confirm('¿Borrar los datos de demostración guardados en este navegador?'))return;data=seed();save();render();notice('Datos de demostración restablecidos.')};
 $('runTests').onclick=()=>{const checks=[['Suma de presupuesto',quoteTotal(10000,20000,5700)===35700],['5 puestos disponibles',Array.from({length:5},(_,i)=>i+1).length===5],['Prohibir horario nocturno',!validSlot(chileLocalToIso('2026-10-12T21:00'),chileLocalToIso('2026-10-12T22:00'))],['Prohibir superposición',(()=>{const old=data.jobs;data.jobs=[{id:'a',station:1,start:'2026-10-12T10:00',end:'2026-10-12T11:00'}];const r=!validAppointment('2026-10-12T10:30','2026-10-12T11:30',1,'b');data.jobs=old;return r})()],['Patente no permite autenticación',!document.querySelector('input[name=password]')]];const passed=checks.filter(x=>x[1]).length;$('tests').textContent=checks.map(([k,v])=>`${v?'OK':'FALLÓ'} — ${k}`).join('\n')+`\nResultado: ${passed}/${checks.length}`};
+
+function buildFeedbackReport(){
+ const f=new FormData($('feedbackForm'));
+ const when=new Intl.DateTimeFormat('es-CL',{timeZone:'America/Santiago',dateStyle:'short',timeStyle:'short'}).format(new Date());
+ const lines=['TATO SOLUCIONES - REPORTE DE PRUEBAS','Fecha (Chile): '+when,'Evaluador: '+String(f.get('tester')||'').trim(),'Dispositivo: '+String(f.get('device')||'')];
+ const sections=[["solicitud","Solicitud desde el celular"],["agenda","Agenda y cinco puestos"],["diagnostico","Diagnóstico y preanálisis"],["presupuesto","Presupuesto y su cálculo"],["reparacion","Seguimiento de reparación"],["inventario","Repuestos y stock"],["historial","Historial del vehículo"],["navegacion","Botones, velocidad y navegación"]];
+ for(const [key,label] of sections)lines.push(label+': '+String(f.get(key)||'no probado'));
+ lines.push('Observaciones:\n'+(String(f.get('comments')||'').trim()||'Sin comentarios'));
+ const report=lines.join('\n');
+ $('feedbackReport').value=report;
+ return report;
+}
+$('copyFeedback').addEventListener('click',async()=>{
+ const report=buildFeedbackReport();
+ try{
+  if(!navigator.clipboard?.writeText)throw Error('Sin portapapeles moderno');
+  await navigator.clipboard.writeText(report);
+  $('feedbackNotice').textContent='Informe copiado. Pégalo en el WhatsApp del equipo que desarrolla Tato Soluciones.';
+ }catch{
+  $('feedbackReport').focus();$('feedbackReport').select();
+  $('feedbackNotice').textContent='El informe está seleccionado. Usa Copiar en tu teléfono y pégalo en WhatsApp.';
+ }
+});
+$('shareFeedback').addEventListener('click',async()=>{
+ const report=buildFeedbackReport();
+ try{
+  if(navigator.share){await navigator.share({title:'Pruebas Tato Soluciones',text:report});$('feedbackNotice').textContent='Selecciona el contacto de WhatsApp al que deseas enviar el informe.';return;}
+  window.open('https://wa.me/?text='+encodeURIComponent(report),'_blank','noopener');
+  $('feedbackNotice').textContent='WhatsApp puede abrirse en otra pestaña. Revisa el destinatario antes de enviar.';
+ }catch(e){
+  if(e?.name==='AbortError')return;
+  $('feedbackNotice').textContent='No se pudo compartir. Usa Copiar informe y pégalo en WhatsApp.';
+ }
+});
+
 render();
