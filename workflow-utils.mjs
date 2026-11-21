@@ -1,4 +1,18 @@
 export const CL_TZ='America/Santiago';
+export const PENDING_DRAFT_TTL_MS=2*60*60*1000;
+export function savePendingDraft(storage,key,draft,now=Date.now()){
+ storage.setItem(key,JSON.stringify({savedAt:now,draft}));
+}
+export function readPendingDraft(storage,key,now=Date.now()){
+ let value;
+ try{value=JSON.parse(storage.getItem(key)||'null')}catch{}
+ if(!value||!value.draft||!Number.isFinite(value.savedAt)||value.savedAt>now||now-value.savedAt>PENDING_DRAFT_TTL_MS){
+  if(value||storage.getItem(key))storage.removeItem(key);
+  return null;
+ }
+ return value.draft;
+}
+export function clearPendingDraft(storage,key){storage.removeItem(key)}
 export function validSlot(start,end){
  if(!start||!end)return false;
  const a=new Date(start),b=new Date(end);
