@@ -66,7 +66,9 @@
 <label>Patente o matrícula<input name="plate" maxlength="9" placeholder="ABCD12"></label>
 <label>Marca<input name="make" maxlength="90" placeholder="SsangYong"></label>
 <label>Modelo<input name="model" maxlength="90" placeholder="Rexton"></label>
-<label>Año<input name="model_year" type="number" min="1950" max="2100" placeholder="2016"></label></div>
+<label>Año<input name="model_year" type="number" min="1950" max="2100" placeholder="2016"></label><label>Motor / motorización<input name="engine" maxlength="100" placeholder="Marca y modelo del motor"></label>
+<label>VIN / número de serie<input name="vin" maxlength="80" placeholder="Opcional"></label>
+<label>Horas de uso (h), equipos náuticos e industriales<input name="equipment_hours" type="number" min="0" max="1000000" step="0.1" inputmode="decimal"></label></div>
 <label>¿Qué le ocurre al equipo? *<textarea name="complaint" rows="3" minlength="15" maxlength="2500" placeholder="Describe la falla o el motivo de la llamada" required></textarea></label>
 <fieldset class="phone-priority"><legend>Prioridad</legend><label><input type="radio" name="priority" value="normal" checked> Normal</label><label><input type="radio" name="priority" value="urgent"> Urgente</label></fieldset>
 <label class="phone-toggle"><input type="checkbox" id="phoneBookNow"> Confirmar ahora fecha y puesto del taller</label>
