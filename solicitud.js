@@ -5,7 +5,7 @@ const KEY='tato_express_key_v18',RECEIPT='tato_express_receipt_v18';
 const api=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/express-intake';
 const workshopPhone='56999346293';
 const hourAssets=new Set(['jet_ski','boat','sailboat','generator','large_engine']);
-function refreshAssetFields(){const type=$('asset_type').value;const hours=hourAssets.has(type);$('hours_field').hidden=!hours;$('odometer_field').hidden=!['auto','motorcycle'].includes(type);$('serial_label').textContent=['auto','motorcycle'].includes(type)?'VIN / número de serie':'Número de serie del equipo';$('odometer_km').disabled=!['auto','motorcycle'].includes(type);$('equipment_hours').disabled=!hours;}
+function refreshAssetFields(){const type=$('asset_type').value;const hours=hourAssets.has(type);const road=['auto','motorcycle'].includes(type);$('hours_field').hidden=!hours;$('odometer_field').hidden=!road;$('serial_label').textContent=road?'VIN / número de serie':'Número de serie del equipo';$('odometer_km').disabled=!road;$('equipment_hours').disabled=!hours;if(!road)$('odometer_km').value='';if(!hours)$('equipment_hours').value='';}
 $('asset_type').addEventListener('change',refreshAssetFields);refreshAssetFields();
 const msg=text=>{$('message').textContent=text;};
 const value=id=>$(id).value.trim();
