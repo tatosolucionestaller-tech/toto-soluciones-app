@@ -296,8 +296,222 @@ $('logout').addEventListener('click',()=>db.auth.signOut());$('tabNew').addEvent
 if('serviceWorker' in navigator && location.protocol==='https:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 // Workflow data is staff-only. Customer decisions use restricted RPCs without internal costs.
-async function loadWorkstations(){if(!isStaff)return;const {data,error}=await db.from('workstations').select('id,name,active').eq('active',true).order('id');if(error)return notice(error.message);const sel=$('workstation');sel.replaceChildren(new Option('Sin asignar',''));for(const x of data||[])sel.append(new Option(x.name,x.id));}
-$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;const form=$('workflowForm');form.reset();if(!id)return;const {data,error}=await db.from('intake_workflow').select('*').eq('request_id',id).maybeSingle();if(error)return notice(error.message);if(!data)return;for(const key of ['diagnosis','diagnosis_tests','public_scope','labor_clp','parts_clp','tax_clp','internal_cost_clp','workstation_id'])if(form.elements[key])form.elements[key].value=data[key]??'';form.elements.appointment_at.value=dateLocal(data.appointment_at);form.elements.appointment_end.value=dateLocal(data.appointment_end);$('offerQuote').disabled=data.quote_status!=='draft';updateTotal();});
+
+/* V24 - recepción por llamada y buscador de repuestos. Sólo accesible con personal autorizado. */
+const staffFunctionsBase=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/';
+let phoneIdempotencyKey=crypto.randomUUID();
+let lastPartSearchText='';
+let currentParts=[];
+async function callStaffFunction(slug,payload){
+ if(!isStaff||!currentUser)throw Error('Necesitas una sesión activa del taller.');
+ const {data:{session},error}=await db.auth.getSession();
+ if(error||!session?.access_token)throw Error('Inicia sesión de nuevo.');
+ const response=await fetch(staffFunctionsBase+slug,{
+  method:'POST',mode:'cors',cache:'no-store',
+  headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY,'Authorization':'Bearer '+session.access_token},
+  body:JSON.stringify(payload)
+ });
+ let result={};try{result=await response.json()}catch{}
+ if(!response.ok||!result.ok)throw Error(result.error||'No se pudo completar la operación.');
+ return result;
+}
+function resetPhoneForm(){
+ $('phoneIntakeForm').reset();
+ $('phoneBookNow').checked=false;$('phoneBooking').hidden=true;
+ phoneIdempotencyKey=crypto.randomUUID();
+}
+$('phoneBookNow').addEventListener('change',e=>{
+ const enabled=e.target.checked;
+ $('phoneBooking').hidden=!enabled;
+ for(const n of ['appointment_at','appointment_end','workstation_id'])$('phoneIntakeForm').elements[n].required=enabled;
+});
+async function refreshPhoneStations(){
+ const sel=$('phoneWorkstation');
+ sel.replaceChildren(new Option('Selecciona puesto',''));
+ const {data,error}=await db.from('workstations').select('id,name').eq('active',true).order('id');
+ if(error)throw Error('No se pudieron consultar puestos: '+error.message);
+ for(const row of data||[])sel.add(new Option(row.name,row.id));
+}
+$('phoneIntakeForm').addEventListener('submit',async e=>{
+ e.preventDefault();if(!isStaff)return notice('Acceso exclusivo al taller.');
+ const form=e.target,f=form.elements,btn=$('phoneCreate');
+ if(btn.disabled)return;
+ const book=$('phoneBookNow').checked;
+ const name=f.customer_name.value.trim(),phone=f.customer_phone.value.trim();
+ const complaint=f.complaint.value.trim();
+ if(name.length<2||phone.length<7||complaint.length<15)return notice('Completa nombre, teléfono y motivo de al menos 15 caracteres.');
+ let start=null,end=null,station=null;
+ if(book){
+  if(!f.appointment_at.value||!f.appointment_end.value||!f.workstation_id.value)return notice('Completa inicio, fin y puesto para reservar.');
+  try{
+   start=isoLocal(f.appointment_at.value);end=isoLocal(f.appointment_end.value);
+   if(!validSlot(start,end)||new Date(start)<=new Date())throw Error('La hora debe ser futura, de lunes a viernes entre 08:30 y 17:00.');
+  }catch(err){return notice('Horario inválido: '+err.message);}
+  station=Number(f.workstation_id.value);
+ }
+ const payload={request_key:phoneIdempotencyKey,customer_name:name,customer_phone:phone,
+  customer_email:f.customer_email.value.trim().toLowerCase()||null,plate:f.plate.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||null,
+  make:f.make.value.trim()||null,model:f.model.value.trim()||null,model_year:f.model_year.value?Number(f.model_year.value):null,
+  complaint,priority:f.priority.value,contact_method:f.contact_method.value,
+  appointment_at:start,appointment_end:end,workstation_id:station};
+ btn.disabled=true;btn.textContent='Guardando…';
+ try{
+  const result=await callStaffFunction('tato-phone-intake',payload);
+  $('phoneIntakeResult').replaceChildren();
+  const label=node('strong','Atención telefónica registrada: TATO-'+result.code.slice(0,8).toUpperCase(),'phone-success');
+  const detail=node('p',book?'Hora y puesto confirmados en agenda.':'Solicitud recibida; queda pendiente de confirmar hora.');
+  const hint=node('p','El cliente no necesita cuenta para solicitar atención. Para activar seguimiento posteriormente deberá verificar un correo propio.');
+  $('phoneIntakeResult').append(label,detail,hint);
+  resetPhoneForm();notice('Atención telefónica guardada en Supabase.');
+  await loadStaff();await loadDashboard();
+  $('workflowRequest').value=result.code;
+  $('workflowRequest').dispatchEvent(new Event('change'));
+ }catch(err){notice('No fue posible registrar la atención: '+err.message);}
+ finally{btn.disabled=false;btn.textContent='Guardar atención telefónica';}
+});
+function mlSearchUrl(q){
+ return 'https://listado.mercadolibre.cl/'+String(q||'repuestos').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9 ]/g,'').trim().replace(/\s+/g,'-');
+}
+function setMLLink(url){
+ const a=$('partsMLLink');
+ a.href=/^https:\/\/listado\.mercadolibre\.cl\/[a-z0-9-]+$/i.test(url)?url:'https://listado.mercadolibre.cl/repuestos';
+}
+$('partsSearchQuery').addEventListener('input',e=>setMLLink(mlSearchUrl(e.target.value)));
+$('partsSearch').addEventListener('click',async()=>{
+ const query=$('partsSearchQuery').value.trim();
+ if(query.length<3)return notice('Indica el repuesto, código OEM o modelo a buscar.');
+ lastPartSearchText=query;
+ const btn=$('partsSearch'),list=$('partsSearchResults');
+ btn.disabled=true;list.replaceChildren(node('p','Buscando repuestos en Mercado Libre Chile…'));
+ setMLLink(mlSearchUrl(query));
+ try{
+  const result=await callStaffFunction('tato-parts-search',{q:query});
+  setMLLink(result.url);
+  list.replaceChildren();
+  if(result.notice)list.append(node('p',result.notice,'part-hint'));
+  if(!result.results?.length){
+   list.append(node('p','Usa “Abrir Mercado Libre Chile”, verifica el repuesto compatible y vuelve para registrar el precio y el enlace de la publicación.'));
+   return;
+  }
+  for(const product of result.results){
+   const row=node('div',undefined,'ml-result');
+   row.append(node('strong',product.title));
+   if(Number.isFinite(product.price))row.append(node('p',money(product.price)+' · precio referencial, sin despacho'));
+   const link=node('a','Ver publicación','secondary');link.href=product.url;link.target='_blank';link.rel='noopener noreferrer';
+   const use=node('button','Usar esta referencia','secondary');use.type='button';
+   use.addEventListener('click',()=>{
+    const f=$('partsEstimateForm').elements;
+    f.part_name.value=product.title.slice(0,150);
+    f.listing_title.value=product.title;
+    f.listing_url.value=product.url;
+    f.unit_cost_clp.value=Number(product.price)||0;
+    f.supplier.value='Mercado Libre Chile';
+    updatePartPreview();
+    $('partsEstimateForm').scrollIntoView({behavior:'smooth',block:'center'});
+   });
+   row.append(link,use);list.append(row);
+  }
+ }catch(err){
+  list.replaceChildren(node('p','La búsqueda automática no está disponible: '+err.message));
+  list.append(node('p','Abre Mercado Libre Chile y registra el costo desde la publicación.'));
+ }finally{btn.disabled=false;}
+});
+function priceNumbers(f){
+ const numbers=['quantity','unit_cost_clp','shipping_clp','markup_pct'].map(n=>Number(f[n].value||0));
+ const [qty,cost,shipping,markup]=numbers;
+ if(!Number.isInteger(qty)||qty<1||qty>100||!Number.isSafeInteger(cost)||cost<0||
+    !Number.isSafeInteger(shipping)||shipping<0||!Number.isFinite(markup)||markup<0||markup>500)
+   throw Error('Cantidad, costos o margen inválidos.');
+ const base=qty*cost+shipping;
+ const sale=Math.round(base*(1+markup/100));
+ if(!Number.isSafeInteger(sale)||sale>1000000000)throw Error('Costo fuera de rango.');
+ return {quantity:qty,unit_cost_clp:cost,shipping_clp:shipping,markup_pct:markup,base,sale};
+}
+function updatePartPreview(){
+ const f=$('partsEstimateForm').elements;
+ try{const v=priceNumbers(f);$('partsEstimatePreview').textContent='Costo de compra y despacho: '+money(v.base)+' · estimación de venta sin impuestos adicionales: '+money(v.sale);}
+ catch{$('partsEstimatePreview').textContent='Introduce cantidad y costos válidos.';}
+}
+for(const key of ['quantity','unit_cost_clp','shipping_clp','markup_pct'])$('partsEstimateForm').elements[key].addEventListener('input',updatePartPreview);
+updatePartPreview();
+async function loadPartEstimates(){
+ const el=$('partsEstimateList');el.replaceChildren();
+ const id=$('workflowRequest').value;
+ currentParts=[];
+ if(!isStaff||!id){el.append(node('p','Selecciona primero una solicitud de la agenda.'));return;}
+ const {data,error}=await db.from('part_cost_estimates')
+  .select('id,part_name,listing_title,listing_url,supplier,quantity,unit_cost_clp,shipping_clp,markup_pct,stock_status,created_at')
+  .eq('request_id',id).order('created_at',{ascending:false}).limit(100);
+ if(error){el.append(node('p','No se pudieron cargar los repuestos: '+error.message));return;}
+ currentParts=data||[];
+ if(!currentParts.length){el.append(node('p','Aún no hay repuestos presupuestados.'));return;}
+ let total=0,baseTotal=0;
+ for(const x of currentParts){
+  const base=x.unit_cost_clp*x.quantity+x.shipping_clp;
+  const sale=Math.round(base*(1+Number(x.markup_pct)/100));
+  total+=sale;baseTotal+=base;
+  const row=node('div',undefined,'part-row');
+  row.append(node('strong',x.part_name),node('small','Cantidad: '+x.quantity+' · Costo: '+money(base)+' · Estimado venta: '+money(sale)+' · '+x.stock_status));
+  if(x.listing_url){
+   const link=node('a','Abrir publicación','part-link');link.href=x.listing_url;link.rel='noopener noreferrer';link.target='_blank';row.append(link);
+  }
+  const remove=node('button','Eliminar registro','secondary');remove.type='button';
+  remove.addEventListener('click',async()=>{
+   if(!confirm('¿Eliminar este repuesto de la estimación?'))return;
+   const {error}=await db.from('part_cost_estimates').delete().eq('id',x.id);
+   notice(error?'No se pudo eliminar: '+error.message:'Repuesto retirado.');
+   if(!error)loadPartEstimates();
+  });row.append(remove);el.append(row);
+ }
+ el.append(node('p','Total de compra estimado: '+money(baseTotal)+' · Venta estimada sin impuestos adicionales: '+money(total),'parts-preview'));
+ const apply=node('button','Aplicar total de repuestos al borrador','secondary');apply.type='button';
+ apply.addEventListener('click',async()=>{
+  const {data,error}=await db.from('intake_workflow').select('quote_status').eq('request_id',id).maybeSingle();
+  if(error)return notice(error.message);
+  if(data?.quote_status&&data.quote_status!=='draft')return notice('El presupuesto ya fue ofrecido o decidido y no puede modificarse.');
+  if(total>1000000000)return notice('El monto es demasiado alto para esta cotización.');
+  $('workflowForm').elements.parts_clp.value=String(total);
+  $('workflowForm').elements.internal_cost_clp.value=String(baseTotal);
+  updateTotal();
+  notice('Montos cargados al borrador. Revisa impuestos y mano de obra antes de guardar. Esto no guarda ni envía el presupuesto.');
+ });
+ el.append(apply);
+}
+$('partsEstimateForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(!isStaff)return notice('Acceso exclusivo del taller.');
+ const req=$('workflowRequest').value;
+ if(!req)return notice('Primero selecciona una solicitud de la agenda.');
+ const form=event.target,f=form.elements,btn=$('partsEstimateSave');
+ let data;
+ try{
+  const costs=priceNumbers(f);
+  const part_name=f.part_name.value.trim();
+  if(part_name.length<3)return notice('Indica el repuesto.');
+  let url=f.listing_url.value.trim();
+  if(url&&!/^https:\/\/([a-z0-9-]+\.)*mercadolibre\.cl(\/|$)/i.test(url))
+   return notice('Por seguridad, utiliza una publicación de Mercado Libre Chile o deja el enlace vacío.');
+  if(url.length>=1500)return notice('El enlace es demasiado largo.');
+  data={request_id:req,part_name,search_text:lastPartSearchText||part_name,
+   listing_url:url||null,listing_title:f.listing_title.value.trim()||null,
+   supplier:f.supplier.value.trim()||'Mercado Libre Chile',quantity:costs.quantity,unit_cost_clp:costs.unit_cost_clp,
+   shipping_clp:costs.shipping_clp,markup_pct:costs.markup_pct,stock_status:f.stock_status.value,
+   quote_note:f.quote_note.value.trim()||null,entered_by:currentUser.id};
+ }catch(err){return notice(err.message);}
+ btn.disabled=true;
+ try{
+  const {error}=await db.from('part_cost_estimates').insert(data);
+  if(error)throw error;
+  notice('Repuesto registrado en el costo de la solicitud. Aún no se incluye en el presupuesto hasta que pulses Aplicar total.');
+  form.reset();form.elements.markup_pct.value='30';updatePartPreview();
+  await loadPartEstimates();
+ }catch(err){notice('No se pudo guardar el repuesto: '+err.message);}
+ finally{btn.disabled=false;}
+});
+
+async function loadWorkstations(){if(!isStaff)return;const {data,error}=await db.from('workstations').select('id,name,active').eq('active',true).order('id');if(error)return notice(error.message);const sel=$('workstation');sel.replaceChildren(new Option('Sin asignar',''));for(const x of data||[])sel.append(new Option(x.name,x.id));try{await refreshPhoneStations();}catch(e){notice(e.message);}}
+$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;loadPartEstimates();const form=$('workflowForm');form.reset();if(!id)return;const {data,error}=await db.from('intake_workflow').select('*').eq('request_id',id).maybeSingle();if(error)return notice(error.message);if(!data)return;for(const key of ['diagnosis','diagnosis_tests','public_scope','labor_clp','parts_clp','tax_clp','internal_cost_clp','workstation_id'])if(form.elements[key])form.elements[key].value=data[key]??'';form.elements.appointment_at.value=dateLocal(data.appointment_at);form.elements.appointment_end.value=dateLocal(data.appointment_end);$('offerQuote').disabled=data.quote_status!=='draft';updateTotal();});
 function updateTotal(){const f=$('workflowForm').elements;$('quoteTotal').textContent='Total al cliente: '+money(['labor_clp','parts_clp','tax_clp'].reduce((n,k)=>n+Number(f[k].value||0),0));}
 for(const x of ['labor_clp','parts_clp','tax_clp'])$('workflowForm').elements[x].addEventListener('input',updateTotal);updateTotal();
 function workflowPayload(){const f=$('workflowForm').elements;const id=f.request_id.value;if(!id)throw Error('Selecciona una solicitud');const start=f.appointment_at.value,end=f.appointment_end.value,station=f.workstation_id.value;if((start||end||station)&&!(start&&end&&station))throw Error('Completa inicio, fin y puesto, o deja los tres vacíos');if(start&&!validSlot(isoLocal(start),isoLocal(end)))throw Error('Reserva fuera de horario (lunes a viernes 08:30–17:00 Chile) o intervalo inválido');const data={request_id:id,appointment_at:isoLocal(start),appointment_end:isoLocal(end),workstation_id:station?Number(station):null};for(const key of ['diagnosis','diagnosis_tests','public_scope'])data[key]=f[key].value.trim()||null;for(const key of ['labor_clp','parts_clp','tax_clp','internal_cost_clp']){data[key]=Number(f[key].value||0);if(!Number.isSafeInteger(data[key])||data[key]<0)throw Error('Monto inválido');}quoteTotal(data.labor_clp,data.parts_clp,data.tax_clp);return data;}

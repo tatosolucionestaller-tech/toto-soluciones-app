@@ -93,3 +93,28 @@ body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 #staff .pdf-actions button:disabled{opacity:.55;cursor:wait}
 #staff .pdf-actions .pdf-share{background:#18784c!important}
 @media(max-width:600px){#staff .pdf-actions button{flex-basis:100%}}
+
+/* V24: recepción telefónica, agenda y repuestos. */
+#phoneIntakePanel,#partsPanel{border-top:4px solid #c52129}
+#phoneIntakePanel .queue-heading,#partsPanel .queue-heading{margin-bottom:18px}
+#phoneIntakePanel .grid,#partsPanel .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+#phoneIntakePanel fieldset{border:1px solid #dbe3e8;border-radius:10px;padding:12px 16px;margin:16px 0}
+#phoneIntakePanel fieldset label{display:inline-flex;align-items:center;gap:8px;margin-right:20px}
+#phoneIntakePanel input[type="radio"],#phoneIntakePanel input[type="checkbox"]{width:auto;min-width:16px;height:16px}
+#phoneIntakePanel .phone-toggle{display:flex;align-items:center;gap:10px;padding:12px;background:#f5f8fa;border-radius:9px;margin:12px 0}
+#phoneBooking{padding:12px;background:#f8fafc;border:1px solid #dce5eb;border-radius:9px;margin-bottom:14px}
+#phoneIntakeResult:not(:empty){padding:15px;border:1px solid #b8dbc7;background:#effaf3;border-radius:9px;margin:18px 0}
+#phoneIntakeResult .phone-success{display:block;color:#176e39;font-size:16px}
+#partsPanel .parts-tool{padding:14px;background:#f5f8fa;border:1px solid #dce4e9;border-radius:11px}
+#partsPanel .parts-ml-link{display:inline-flex;align-items:center;justify-content:center;padding:12px 16px;border-radius:8px;background:#172b3a;color:#fff!important;text-decoration:none;font-weight:700}
+#partsPanel h3{margin:25px 0 12px}
+#partsPanel .part-hint{font-size:13px;color:#526474}
+#partsPanel .ml-result,#partsPanel .part-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px;margin:10px 0;border:1px solid #d9e3e8;border-radius:10px;background:#fff}
+#partsPanel .ml-result strong,#partsPanel .part-row strong{flex:0 0 100%;overflow-wrap:anywhere}
+#partsPanel .ml-result p,#partsPanel .part-row small{display:block;flex:0 0 100%;margin:0;color:#566476}
+#partsPanel .ml-result a,#partsPanel .part-row a{padding:10px;text-decoration:underline}
+#partsPanel .ml-result button,#partsPanel .part-row button{width:auto!important}
+#partsPanel .parts-preview{background:#eaf6ee;border:1px solid #c4ded0;color:#164e2b;padding:12px;border-radius:8px;font-weight:700;line-height:1.55}
+#partsPanel #partsEstimateList{margin-top:18px}
+#partsPanel #partsEstimateList>button{margin-top:14px}
+@media(max-width:650px){#phoneIntakePanel .grid,#partsPanel .grid{grid-template-columns:1fr}#partsPanel .ml-result button,#partsPanel .part-row button{width:100%!important}#partsPanel .parts-ml-link{width:100%}}
