@@ -3,7 +3,7 @@ import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from './config.js';
 const $=id=>document.getElementById(id);
 const KEY='tato_express_key_v18',RECEIPT='tato_express_receipt_v18';
 const api=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/express-intake';
-const workshopPhone='56999346293';
+const workshopPhone='56999346293';\nconst hourAssets=new Set(['jet_ski','boat','sailboat','generator','large_engine']);\nfunction refreshAssetFields(){const type=$('asset_type').value;const hours=hourAssets.has(type);$('hours_field').hidden=!hours;$('odometer_field').hidden=!['auto','motorcycle'].includes(type);$('serial_label').textContent=['auto','motorcycle'].includes(type)?'VIN / número de serie':'Número de serie del equipo';$('odometer_km').disabled=!['auto','motorcycle'].includes(type);$('equipment_hours').disabled=!hours;}\n$('asset_type').addEventListener('change',refreshAssetFields);refreshAssetFields();
 const msg=text=>{$('message').textContent=text;};
 const value=id=>$(id).value.trim();
 const priority=()=>document.querySelector('[name="priority"]:checked')?.value||'normal';
@@ -76,7 +76,7 @@ $('intake').addEventListener('submit',async event=>{
   complaint:value('complaint'),service_type:value('service_type'),asset_type:value('asset_type'),
   plate:value('plate').toUpperCase().replace(/[^A-Z0-9]/g,''),
   make:value('make'),model:value('model'),model_year:value('model_year'),
-  odometer_km:value('odometer_km'),preferred_at:null,website:value('website')
+  odometer_km:value('odometer_km'),engine:value('engine'),vin:value('vin'),equipment_hours:value('equipment_hours'),preferred_at:null,website:value('website')
  };
  if(payload.customer_name.length<2||phone.replace(/\D/g,'').length<7||payload.complaint.length<15||!$('consent').checked){
   msg('Ingresa tu nombre, un teléfono válido y describe la falla con al menos 15 caracteres.');return;
@@ -86,7 +86,7 @@ $('intake').addEventListener('submit',async event=>{
  }
  if(combined.value){try{payload.preferred_at=chileLocalToIso(combined.value);}catch{msg('La fecha elegida no es válida.');return;}}
  if(!payload.model_year)payload.model_year=null;
- if(!payload.odometer_km)payload.odometer_km=null;
+ if(!payload.odometer_km)payload.odometer_km=null;\n if(!payload.equipment_hours)payload.equipment_hours=null;\n if(payload.equipment_hours!==null&&(!Number.isFinite(Number(payload.equipment_hours))||Number(payload.equipment_hours)<0||Number(payload.equipment_hours)>1000000||Math.round(Number(payload.equipment_hours)*10)!==Number(payload.equipment_hours)*10)){msg('Ingresa horas válidas (máximo un decimal) o deja el campo vacío.');return;}\n if(payload.equipment_hours!==null&&!hourAssets.has(payload.asset_type)){msg('Las horas de uso se registran para equipos náuticos e industriales.');return;}\n payload.equipment_hours=payload.equipment_hours===null?null:Number(payload.equipment_hours);
  btn.disabled=true;btn.textContent='Enviando solicitud…';msg('Registrando en Tato Soluciones…');
  try{
   const response=await fetch(api,{
