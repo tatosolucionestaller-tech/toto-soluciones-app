@@ -29,7 +29,7 @@ function receipt(r){
 }
 function reset(){
  sessionStorage.removeItem(KEY);sessionStorage.removeItem(RECEIPT);
- $('intake').reset();$('success').classList.add('hidden');$('entry').classList.remove('hidden');
+ $('intake').reset();refreshAssetFields();$('success').classList.add('hidden');$('entry').classList.remove('hidden');
  $('preferred_date').value='';refreshHours();$('safety_message').hidden=true;msg('');requestKey();
  $('entry').scrollIntoView({behavior:'smooth',block:'start'});
 }
