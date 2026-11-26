@@ -323,6 +323,7 @@ function record(item,staff=false){
  if(item.intake_source==='web_express')heading.append(node('span','Solicitud Express','express-badge'));
  if(item.intake_source==='phone')heading.append(node('span','Recepción telefónica','express-badge'));
  wrap.append(heading,node('small',new Date(item.created_at).toLocaleString('es-CL')+' · '+(labels[item.status]||item.status)),node('p',item.complaint),node('small','Cliente: '+item.customer_name+' · '+item.customer_phone));
+ const equipment=[];if(item.vin)equipment.push('Serie/VIN: '+item.vin);if(item.engine)equipment.push('Motor: '+item.engine);if(item.equipment_hours!==null&&item.equipment_hours!==undefined)equipment.push('Uso: '+Number(item.equipment_hours).toLocaleString('es-CL')+' h');if(item.odometer_km)equipment.push('Kilometraje: '+Number(item.odometer_km).toLocaleString('es-CL')+' km');if(equipment.length)wrap.append(node('small',equipment.join(' · '),'equipment-meta'));
  if(item.preferred_at)wrap.append(node('p','Horario solicitado (sin confirmar): '+new Date(item.preferred_at).toLocaleString('es-CL')));
  if(staff){
   const clean=(item.customer_phone||'').replace(/\D/g,'');
@@ -420,8 +421,8 @@ async function loadDashboard(){
  if(!alerts.childNodes.length)alerts.append(node('p','Sin alertas operativas según los registros actuales.'));
 }
 
-async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,asset_type,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
-async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,asset_type,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>['web_express','phone'].includes(x.intake_source)).map(x=>x.id);
+async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,asset_type,make,model,plate,engine,vin,equipment_hours,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
+async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,asset_type,make,model,plate,engine,vin,equipment_hours,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>['web_express','phone'].includes(x.intake_source)).map(x=>x.id);
 if(expressIds.length){
  const {data:budgets,error:budgetError}=await db.from('intake_workflow').select('request_id,quote_status').in('request_id',expressIds);
  if(!budgetError){
@@ -503,6 +504,7 @@ $('phoneIntakeForm').addEventListener('submit',async e=>{
  const payload={request_key:phoneIdempotencyKey,customer_name:name,customer_phone:phone,asset_type:f.asset_type.value,service_type:f.service_type.value,
   customer_email:f.customer_email.value.trim().toLowerCase()||null,plate:f.plate.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||null,
   make:f.make.value.trim()||null,model:f.model.value.trim()||null,model_year:f.model_year.value?Number(f.model_year.value):null,
+  engine:f.engine.value.trim()||null,vin:f.vin.value.trim()||null,equipment_hours:f.equipment_hours.value?Number(f.equipment_hours.value):null,
   complaint,priority:f.priority.value,contact_method:f.contact_method.value,
   appointment_at:start,appointment_end:end,workstation_id:station};
  btn.disabled=true;btn.textContent='Guardando…';
