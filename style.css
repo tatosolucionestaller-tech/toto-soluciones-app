@@ -87,3 +87,9 @@ body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 #staff .pdf-share,#docFiles .pdf-share,.quote-share .pdf-share{background:#157c48!important;color:white!important}
 #staff .pdf-instructions,#docFiles .pdf-instructions{display:block;font-size:12px;line-height:1.5;color:#617080;margin-top:10px}
 #staff .pdf-error{color:#b91c1c;font-size:13px}
+
+/* v23: entrega multicanal de documentos */
+#staff .pdf-actions button{min-height:46px}
+#staff .pdf-actions button:disabled{opacity:.55;cursor:wait}
+#staff .pdf-actions .pdf-share{background:#18784c!important}
+@media(max-width:600px){#staff .pdf-actions button{flex-basis:100%}}

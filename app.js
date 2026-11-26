@@ -42,23 +42,80 @@ async function claimApprovedQuote(session){
  finally{claimInProgress=false;}
 }
 
-function montarAccionesDocumento(holder,pdf,{phone='',message=''}={}){
+
+const deliveryApi=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/tato-email-document';
+function guessType(filename){
+ const kind=/^TATO_(PREDIAGNOSTICO|PRESUPUESTO|RECEPCION|ENTREGA)_/.exec(filename);
+ return kind?.[1]?.toLowerCase()||null;
+}
+async function emailPdfFromStaff({pdf,requestId,email,idempotencyKey}){
+ if(!requestId||!email)throw Error('Falta el correo del cliente o su solicitud.');
+ const {data:{session}}=await db.auth.getSession();
+ if(!session?.access_token)throw Error('Debes iniciar sesión como personal del taller.');
+ const fileData=await new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');
+  reader.onerror=()=>reject(Error('No se pudo leer el documento PDF'));
+  reader.readAsDataURL(pdf.blob);
+ });
+ const docType=guessType(pdf.filename);
+ if(!docType)throw Error('Documento no compatible para correo.');
+ const response=await fetch(deliveryApi,{method:'POST',mode:'cors',cache:'no-store',
+  headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY,'Authorization':'Bearer '+session.access_token},
+  body:JSON.stringify({request_id:requestId,doc_type:docType,idempotency_key:idempotencyKey,attachment:fileData})});
+ let result={};try{result=await response.json();}catch{}
+ if(!response.ok||!result.ok){const err=Error(result.error||'No se pudo enviar el correo');err.needs_setup=result.needs_setup===true;throw err;}
+ return result;
+}
+function emailManual(pdf,email,message){
+ const file=new File([pdf.blob],pdf.filename,{type:'application/pdf'});
+ if(navigator.canShare?.({files:[file]})&&navigator.share){
+   return navigator.share({files:[file],title:pdf.title,text:message+'\nDestinatario: '+email});
+ }
+ descargarDocumento(pdf.blob,pdf.filename);
+ const subject='Tato Soluciones | '+pdf.title;
+ const body=message+'\n\nAdjunta el archivo descargado: '+pdf.filename+'\n\nTato Soluciones';
+ window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body),'_blank','noopener,noreferrer');
+ return Promise.resolve('downloaded');
+}
+function montarAccionesDocumento(holder,pdf,{phone='',email='',requestId='',message=''}={}){
  const row=node('div',undefined,'pdf-actions');
  const save=node('button','Descargar PDF','secondary');save.type='button';
- save.addEventListener('click',()=>{descargarDocumento(pdf.blob,pdf.filename);notice('PDF descargado. Puedes guardarlo o adjuntarlo a WhatsApp.');});
- const share=node('button','Compartir PDF por WhatsApp','pdf-share');share.type='button';
+ save.addEventListener('click',()=>{descargarDocumento(pdf.blob,pdf.filename);notice('PDF descargado. Puedes guardarlo o adjuntarlo a WhatsApp o correo.');});
+ const share=node('button','Compartir por WhatsApp','pdf-share');share.type='button';
  share.addEventListener('click',()=>{
   try{
    const result=compartirDocumento({blob:pdf.blob,filename:pdf.filename,title:pdf.title,message,phone});
    Promise.resolve(result).then((out)=>{
     notice(out==='downloaded'?'PDF descargado. Adjunta el archivo en el chat que se abrió.':'Elige WhatsApp y el destinatario para compartir el documento.');
-   }).catch(error=>{
-    if(error?.name!=='AbortError')notice('No se pudo compartir: '+(error?.message||'revisa permisos del navegador'));
-   });
+   }).catch(error=>{if(error?.name!=='AbortError')notice('No se pudo compartir: '+(error?.message||'revisa los permisos del navegador'));});
   }catch(error){notice('No se pudo compartir: '+error.message);}
  });
- row.append(save,share);holder.append(row);
- const hint=node('small','En móviles compatibles usa Compartir. En computador descarga el PDF y adjúntalo en WhatsApp Web. El archivo NO se envía sin tu confirmación.','pdf-instructions');holder.append(hint);
+ row.append(save,share);
+ if(email){
+  const mail=node('button','Enviar por correo','secondary');mail.type='button';
+  let attemptId=crypto.randomUUID();
+  mail.addEventListener('click',async()=>{
+   if(!confirm('¿Enviar el documento '+pdf.filename+' al correo registrado '+email+'?'))return;
+   mail.disabled=true;
+   try{
+    const result=await emailPdfFromStaff({pdf,requestId,email,idempotencyKey:attemptId});
+    mail.textContent='Correo enviado';
+    notice(result.already_sent?'Este documento ya se envió anteriormente.':'Correo aceptado por el proveedor para '+result.sent_to+'. La entrega final depende del servidor de destino.');
+   }catch(error){
+    if(error.needs_setup){
+     notice('Correo automático aún sin configurar. Se abrirá una opción para compartir el PDF por correo. Selecciona Gmail u otra app.');
+     try{const result=await emailManual(pdf,email,message);
+       if(result==='downloaded')notice('Descargamos el PDF y abrimos tu correo: debes adjuntar el archivo y presionar Enviar.');
+     }catch(e){if(e?.name!=='AbortError')notice('No pudimos compartir el archivo: '+e.message);}
+    }else{attemptId=crypto.randomUUID();notice('No se pudo enviar el correo: '+error.message);}
+   }finally{mail.disabled=false;}
+  });
+  row.append(mail);
+ }
+ holder.append(row);
+ const hint=node('small','WhatsApp y correo permiten enviar el mismo PDF. En un computador, si usas el correo manual, adjunta el archivo descargado antes de enviarlo. El envío automático por correo requiere un remitente verificado.','pdf-instructions');
+ holder.append(hint);
 }
 async function prepararFichaPdf(item,holder){
  const {data:work,error}=await db.from('intake_workflow')
@@ -67,7 +124,7 @@ async function prepararFichaPdf(item,holder){
  const pdf=crearDocumentoTato({tipo:'prediagnostico',solicitud:item,trabajo:work||{}});
  const box=node('div',undefined,'pdf-packet');
  box.append(node('strong','Ficha de atención · '+pdf.filename));
- montarAccionesDocumento(box,pdf,{phone:item.customer_phone,
+ montarAccionesDocumento(box,pdf,{phone:item.customer_phone,email:item.customer_email,requestId:item.id,
   message:'Hola, somos Tato Soluciones. Te compartimos tu ficha de atención preliminar '+item.id.slice(0,8).toUpperCase()+'. No autoriza reparaciones.'});
  holder.append(box);
 }
@@ -99,7 +156,7 @@ async function issueExpressQuote(item,box){
   if(work?.quote_status!=='offered')throw Error('El presupuesto aún no se encuentra ofrecido.');
   const pdf=crearDocumentoTato({tipo:'presupuesto',solicitud:item,trabajo:work,urlAprobacion:res.url});
   share.append(node('strong','Documento profesional listo · '+pdf.filename));
-  montarAccionesDocumento(share,pdf,{phone:item.customer_phone,
+  montarAccionesDocumento(share,pdf,{phone:item.customer_phone,email:item.customer_email,requestId:item.id,
    message:'Hola, somos Tato Soluciones. Adjuntamos el presupuesto de tu vehículo. Revísalo y aprueba o rechaza en este enlace privado: '+res.url});
  }catch(error){share.append(node('p','El enlace de aprobación está listo, pero no pudimos generar el PDF: '+error.message,'pdf-error'));}
 }
@@ -290,7 +347,7 @@ for(const [buttonId,type] of [['printReception','recepcion'],['printDelivery','e
    const {pdf,req}=await prepararActaDigital(type);
    const container=$('docFiles');container.replaceChildren();
    container.append(node('strong','Documento listo: '+pdf.filename));
-   montarAccionesDocumento(container,pdf,{phone:req.customer_phone,message:'Tato Soluciones: adjuntamos el registro digital de '+(type==='recepcion'?'recepción':'entrega')+' del vehículo.'});
+   montarAccionesDocumento(container,pdf,{phone:req.customer_phone,email:req.customer_email,requestId:req.id,message:'Tato Soluciones: adjuntamos el registro digital de '+(type==='recepcion'?'recepción':'entrega')+' del vehículo.'});
    notice('Archivo digital preparado. No necesitas impresora.');
   }catch(error){notice('No se pudo generar el documento: '+error.message);}
   finally{button.disabled=false;}
