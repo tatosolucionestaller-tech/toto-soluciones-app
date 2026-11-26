@@ -81,7 +81,7 @@ $('intake').addEventListener('submit',async event=>{
   msg('Ingresa tu nombre, un teléfono válido y describe la falla con al menos 15 caracteres.');return;
  }
  if(payload.plate&&payload.plate.length!==6&&payload.plate.length!==5&&payload.plate.length!==7&&payload.plate.length!==8){
-  msg('Revisa la patente o déjala vacía.');return;
+  msg('Revisa la patente o identificación (5 a 8 caracteres) o déjala vacía.');return;
  }
  if(combined.value){try{payload.preferred_at=chileLocalToIso(combined.value);}catch{msg('La fecha elegida no es válida.');return;}}
  if(!payload.model_year)payload.model_year=null;
