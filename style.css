@@ -48,3 +48,26 @@ main .hero::before{background:linear-gradient(90deg,rgba(8,13,18,.1) 0%,rgba(8,1
 .quote-share{padding:14px;border:1px solid #d9e2e7;border-radius:10px;background:#f6f9fb;margin:14px 0;display:flex;flex-direction:column;gap:10px}
 .quote-share strong{font-size:13px}.quote-share input{width:100%;font:13px/1.5 monospace;padding:12px;border:1px solid #cbd4dc;border-radius:6px;overflow:hidden}
 .quote-share button{background:#182630!important;color:white!important;align-self:flex-start}.quote-share .staff-whatsapp{margin:0}
+
+/* v20: Panel exclusivo para personal de Tato; cliente y taller ya no comparten flujo. */
+body.staff-mode #tabNew,body.staff-mode #tabMine{display:none!important}
+body:not(.staff-mode) #tabStaff,body:not(.staff-mode) #tabDashboard{display:none!important}
+body.staff-mode main .hero{background-image:url('assets/tato-taller.webp');background-position:32% 12%;min-height:212px;padding:35px 34px 35px 49%}
+body.staff-mode main .hero::before{background:linear-gradient(90deg,rgba(10,15,22,.18) 0%,rgba(10,15,22,.25) 37%,rgba(10,15,22,.92) 62%,#0b111b 100%)}
+body.staff-mode #staff.card:before{background-image:url('assets/tato-diagnostico.webp');background-position:45% 11%;height:100px}
+body.staff-mode #dashboard.card:before{display:none}
+body.staff-mode #staff.card,body.staff-mode #dashboard.card{border-top:4px solid #d5090d}
+body.staff-mode #staff.card{padding-top:22px}
+body.staff-mode #staff.card:before{margin:-22px -25px 21px}
+body.staff-mode #dashboard.card{padding-top:25px}
+.queue-heading{display:flex;flex-direction:column;align-items:flex-start;gap:8px;margin-bottom:18px}
+.queue-heading h2{margin:0;font-size:27px}
+.queue-heading p{margin:0 0 7px;color:#65727c;line-height:1.55}
+.queue-heading .eyebrow{color:#b81420}
+.new-express-intro{padding:8px 2px}
+.new-express-link{display:inline-flex;padding:14px 20px;background:#d5090d;color:#fff!important;border-radius:9px;font-weight:700;text-decoration:none;margin:9px 0 15px}
+.new-express-intro .hint{font-weight:400}
+body.staff-mode .tabs{margin:10px 0 18px}
+body.staff-mode .tabs button.selected{background:#d5090d}
+body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
+@media(max-width:600px){body.staff-mode main .hero{background-position:32% 15%;padding:28px 22px;min-height:235px}body.staff-mode main .hero::before{background:rgba(9,14,22,.83)}body.staff-mode #staff.card:before{height:75px;margin:-22px -19px 18px}}
