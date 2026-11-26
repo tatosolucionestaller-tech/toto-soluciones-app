@@ -162,3 +162,15 @@ body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 #cashPanel .cash-payment small{color:#586674}
 #cashPanel .cash-done{background:#e5f5eb;color:#17643c;padding:12px;border-radius:9px}
 @media(max-width:650px){#cashPanel .grid{grid-template-columns:1fr}}
+
+/* V28 — cierre, devoluciones y comprobantes */
+#cashPanel .cash-admin-tools{border-top:1px solid #dbe4e9;margin-top:22px;padding-top:18px}
+#cashPanel .cash-admin-tools h3{margin:0 0 9px;font-size:18px}
+#cashPanel .cash-admin-tools p{line-height:1.5}
+#cashAdjustmentForm .phone-toggle{align-items:flex-start}
+#cashPanel .cash-report-line{display:flex;flex-direction:column;gap:4px;border-bottom:1px solid #dfe5e9;padding:10px 4px}
+#cashPanel .cash-report-line strong{color:#193e33}
+#cashPanel .cash-report-line span{color:#5d6b75;font-size:13px}
+#cashPanel #cashReport{padding:12px 14px;border-radius:9px;background:#f6f8f9;margin-top:12px}
+#cashPanel .cash-payment>button{align-self:flex-start;min-width:205px}
+#cashPanel #cashCloseDay[disabled]{opacity:.5;cursor:not-allowed}

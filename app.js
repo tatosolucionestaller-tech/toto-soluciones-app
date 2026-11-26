@@ -704,39 +704,67 @@ async function loadCashOrders(){
 }
 async function loadCashForOrder(){
  const id=$('cashOrderSelect').value,seq=++cashierLoadNonce;
- const panel=$('cashBalance'),history=$('cashHistory'),save=$('cashSave');
- save.disabled=true;history.replaceChildren();
- if(!id||!cashierLookup[id]){
-  panel.textContent='Selecciona una orden para consultar el total, los abonos y el saldo.';
-  return;
- }
- panel.textContent='Calculando saldo…';
- const {data:payments,error}=await db.from('payments')
-  .select('id,amount,method,status,reference,paid_at,recorded_by')
+ const panel=$('cashBalance'),history=$('cashHistory'),btn=$('cashSave'),picker=$('cashAdjustmentPayment');
+ btn.disabled=true;history.replaceChildren();picker.replaceChildren(new Option('Selecciona un pago',''));
+ if(!id||!cashierLookup[id]){panel.textContent='Selecciona una orden para consultar los abonos.';return;}
+ panel.textContent='Calculando saldo y correcciones…';
+ const {data:payments,error}=await db.from('payments').select('id,amount,method,status,reference,paid_at')
   .eq('repair_order_id',id).order('paid_at',{ascending:false}).limit(200);
  if(seq!==cashierLoadNonce||$('cashOrderSelect').value!==id)return;
- if(error){panel.textContent='No se pudieron consultar los abonos: '+error.message;return;}
- const paid=(payments||[]).filter(x=>x.status==='paid').reduce((a,x)=>a+Number(x.amount),0);
- const total=cashierLookup[id].total,balance=Math.max(0,total-paid);
- panel.replaceChildren();
- panel.append(node('strong','Presupuesto '+money(total)));
- panel.append(node('p','Abonos confirmados: '+money(paid)));
- panel.append(node('p','Saldo pendiente: '+money(balance),'cash-remaining'));
- if(balance<=0){
-  history.append(node('p','La orden está pagada. No se admiten más abonos.','cash-done'));
-  return;
+ if(error){panel.textContent='Error al consultar abonos: '+error.message;return;}
+ const ids=(payments||[]).map(p=>p.id);
+ const {data:adjustments,error:adjError}=ids.length?
+  await db.from('payment_adjustments').select('id,payment_id,kind,amount_clp,created_at,reason')
+    .in('payment_id',ids).order('created_at',{ascending:false}).limit(300):{data:[],error:null};
+ if(seq!==cashierLoadNonce||$('cashOrderSelect').value!==id)return;
+ if(adjError){panel.textContent='Error al consultar devoluciones: '+adjError.message;return;}
+ const byPayment=new Map();
+ for(const a of adjustments||[])byPayment.set(a.payment_id,(byPayment.get(a.payment_id)||[]).concat(a));
+ const total=cashierLookup[id].total;
+ let gross=0,deducted=0;
+ for(const p of payments||[]){
+  if(p.status!=='paid')continue;
+  gross+=Number(p.amount);deducted+=(byPayment.get(p.id)||[]).reduce((n,a)=>n+Number(a.amount_clp),0);
  }
- save.disabled=false;
- const amountInput=$('cashForm').elements.amount_clp;
- amountInput.max=String(Math.round(balance));
- for(const payment of payments||[]){
+ const net=Math.max(0,gross-deducted),balance=Math.max(0,total-net);
+ panel.replaceChildren(node('strong','Presupuesto: '+money(total)),node('p','Pagos originales: '+money(gross)),
+  node('p','Devoluciones y anulaciones: '+money(deducted)),
+  node('p','Pagado neto: '+money(net)),
+  node('p','Saldo pendiente: '+money(balance),'cash-remaining'));
+ $('cashForm').elements.amount_clp.max=String(Math.round(balance));btn.disabled=balance<=0;
+ if(balance<=0)history.append(node('p','Orden pagada. No se admiten más abonos.','cash-done'));
+ for(const p of payments||[]){
+  const corrections=byPayment.get(p.id)||[];
+  const sub=corrections.reduce((n,a)=>n+Number(a.amount_clp),0);
   const row=node('article',undefined,'cash-payment');
   const methodNames={cash:'Efectivo',transfer:'Transferencia',debit_card:'Débito',credit_card:'Crédito',other:'Otro'};
-  row.append(node('strong',money(payment.amount)+' · '+(methodNames[payment.method]||payment.method)),
-   node('small',new Date(payment.paid_at).toLocaleString('es-CL')+' · '+payment.status));
-  if(payment.reference)row.append(node('small','Referencia: '+payment.reference));
+  row.append(node('strong',money(p.amount)+' · '+(methodNames[p.method]||p.method)),
+   node('small',new Date(p.paid_at).toLocaleString('es-CL')+' · '+p.status));
+  if(p.reference)row.append(node('small','Referencia: '+p.reference));
+  if(sub)row.append(node('small','Correcciones: -'+money(sub)));
+  if(p.status==='paid'&&Number(p.amount)>sub)picker.add(new Option(money(Number(p.amount)-sub)+' disponible · '+new Date(p.paid_at).toLocaleDateString('es-CL'),p.id));
+  const download=node('button','Descargar comprobante interno PDF','secondary');download.type='button';
+  download.addEventListener('click',()=>{
+   try{
+    const order=cashierLookup[id];
+    const doc=crearDocumentoTato({tipo:'comprobante',solicitud:{id:p.id,plate:'Orden '+order.order_number},campos:[
+      {label:'Orden Nº',value:String(order.order_number)},
+      {label:'Fecha del pago',value:new Date(p.paid_at).toLocaleString('es-CL')},
+      {label:'Método',value:methodNames[p.method]||p.method},
+      {label:'Pago original',value:money(p.amount)},
+      {label:'Ajustes',value:money(sub)},
+      {label:'Pago neto',value:money(Math.max(0,Number(p.amount)-sub))},
+      {label:'Referencia',value:p.reference||'Sin referencia'},
+      {label:'Registro',value:p.id}
+    ]});
+    descargarDocumento(doc.blob,doc.filename);
+   }catch(err){notice('No se pudo generar el comprobante: '+err.message);}
+  });
+  row.append(download);
+  for(const a of corrections)row.append(node('small',(a.kind==='void'?'Anulación':'Devolución')+' · -'+money(a.amount_clp)+' · '+new Date(a.created_at).toLocaleString('es-CL')));
   history.append(row);
  }
+ if(!(payments||[]).length)history.append(node('p','Esta orden todavía no tiene pagos.'));
 }
 $('cashOrderSelect').addEventListener('change',()=>{
  pendingCashKey=crypto.randomUUID();$('cashForm').elements.amount_clp.value='';
@@ -772,6 +800,91 @@ $('cashForm').addEventListener('submit',async event=>{
   await loadCashForOrder();
  }catch(err){notice('No fue posible registrar el abono: '+err.message);}
  finally{btn.textContent='Registrar abono recibido';if(btn.disabled&&$('cashOrderSelect').value&&cashierLookup[$('cashOrderSelect').value]){const max=Number($('cashForm').elements.amount_clp.max);btn.disabled=!(Number.isFinite(max)&&max>0);}}
+});
+
+/* V28 - corrections preserve original payment; daily closing is immutable. */
+let pendingAdjustmentKey=crypto.randomUUID();
+$('cashAdjustmentForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ const f=event.target.elements,btn=$('cashAdjustSave');
+ if(btn.disabled||!isStaff)return;
+ const amount=Number(f.amount_clp.value),reason=f.reason.value.trim();
+ if(!f.payment_id.value||!Number.isSafeInteger(amount)||amount<=0||amount>100000000)
+  return notice('Selecciona un pago y registra el monto.');
+ if(reason.length<12)return notice('Explica el motivo con al menos 12 caracteres.');
+ if(!f.money_returned.checked)return notice('Confirma que la devolución o el reverso ya se realizó.');
+ if(!confirm('¿Registrar corrección de '+money(amount)+'? El pago original seguirá visible.'))return;
+ btn.disabled=true;
+ try{
+  const {data,error}=await db.rpc('staff_adjust_payment',{
+   p_payment_id:f.payment_id.value,p_adjustment_key:pendingAdjustmentKey,p_kind:f.kind.value,
+   p_amount_clp:amount,p_method:f.method.value,p_reference:f.reference.value.trim()||null,
+   p_reason:reason,p_money_returned:true
+  });
+  if(error)throw error;
+  const result=Array.isArray(data)?data[0]:data;
+  if(!result?.adjustment_id)throw Error('Falta confirmación de Supabase.');
+  pendingAdjustmentKey=crypto.randomUUID();
+  f.amount_clp.value='';f.reference.value='';f.reason.value='';f.money_returned.checked=false;
+  notice('Corrección registrada. Se conservó el historial del abono original.');
+  await loadCashForOrder();
+ }catch(error){notice('No se registró la corrección: '+error.message);}
+ finally{btn.disabled=false;}
+});
+function chileCalendarDay(d=new Date()){
+ const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
+ const o=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+ return o.year+'-'+o.month+'-'+o.day;
+}
+$('cashReportDate').value=chileCalendarDay();
+async function loadDailyCashReport(){
+ const day=$('cashReportDate').value;
+ if(!day)return notice('Selecciona una fecha.');
+ const el=$('cashReport'),button=$('cashCloseDay');
+ button.disabled=true;el.replaceChildren(node('p','Consultando movimientos…'));
+ const [{data,error},{data:closed,error:closedError}]=await Promise.all([
+  db.rpc('staff_cash_day_summary',{p_day:day}),
+  db.from('cash_day_closures').select('cash_day,closed_at,method_totals,note').eq('cash_day',day).maybeSingle()
+ ]);
+ el.replaceChildren();
+ if(error||closedError){
+  el.append(node('p','No se pudo consultar: '+(error?.message||closedError?.message)));
+  return;
+ }
+ if(closed){
+  el.append(node('strong','Caja cerrada el '+new Date(closed.closed_at).toLocaleString('es-CL')));
+  if(closed.note)el.append(node('p','Nota: '+closed.note));
+ }
+ const list=closed?.method_totals?.length?
+  closed.method_totals.map(x=>({method:x.method,gross_clp:x.gross,refund_clp:x.refund,void_clp:x.void,net_clp:x.net})):
+  (data||[]);
+ let sum=0;
+ for(const item of list){
+  sum+=Number(item.net_clp);
+  const row=node('div',undefined,'cash-report-line');
+  row.append(node('strong',({cash:'Efectivo',transfer:'Transferencia',debit_card:'Débito',credit_card:'Crédito',other:'Otro'})[item.method]||item.method));
+  row.append(node('span','Ingresos '+money(item.gross_clp)+' · Devoluciones '+money(item.refund_clp)+' · Anulaciones '+money(item.void_clp)));
+  row.append(node('strong','Neto '+money(item.net_clp)));el.append(row);
+ }
+ el.append(node('p','Saldo neto del día: '+money(sum),'cash-remaining'));
+ button.disabled=Boolean(closed)||day>=chileCalendarDay();
+}
+$('cashShowReport').addEventListener('click',loadDailyCashReport);
+$('cashReportDate').addEventListener('change',loadDailyCashReport);
+$('cashCloseDay').addEventListener('click',async()=>{
+ const day=$('cashReportDate').value,btn=$('cashCloseDay');
+ if(!day||day>=chileCalendarDay())return notice('Solo se pueden cerrar jornadas anteriores.');
+ if(!confirm('¿Confirmas el cierre definitivo del '+day+'? La caja se conservará como historial.'))return;
+ btn.disabled=true;
+ try{
+  const {data,error}=await db.rpc('staff_close_cash_day',{p_day:day,p_note:$('cashCloseNote').value.trim()||null});
+  if(error)throw error;
+  const info=Array.isArray(data)?data[0]:data;
+  if(!info?.closed_day)throw Error('No se recibió confirmación del cierre.');
+  notice('Caja cerrada '+day+'. Neto '+money(info.total_net_clp));
+  await loadDailyCashReport();
+ }catch(error){notice('No se pudo cerrar caja: '+error.message);}
+ finally{btn.disabled=false;}
 });
 
 const stageLabels={parts_pending:'Esperando repuestos',repairing:'En reparación',quality_check:'Control de calidad',ready_for_pickup:'Listo para entrega',delivered:'Entregado'};

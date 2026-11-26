@@ -7,7 +7,7 @@ const clean=(v)=>String(v??'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/[\
 const stamp=(date)=>new Intl.DateTimeFormat('es-CL',{timeZone:'America/Santiago',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(date);
 const dateText=(iso)=>iso?new Intl.DateTimeFormat('es-CL',{timeZone:'America/Santiago',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date(iso)):'Por confirmar';
 const shortCode=(id)=>'TATO-'+String(id||'SIN-CODIGO').slice(0,8).toUpperCase();
-const kindName={prediagnostico:'FICHA DE ATENCION',presupuesto:'PRESUPUESTO DE REPARACION',recepcion:'REGISTRO DE RECEPCION',entrega:'REGISTRO DE ENTREGA'};
+const kindName={prediagnostico:'FICHA DE ATENCION',presupuesto:'PRESUPUESTO DE REPARACION',recepcion:'REGISTRO DE RECEPCION',entrega:'REGISTRO DE ENTREGA',comprobante:'COMPROBANTE INTERNO DE PAGO'};
 function clip(v,n=1700){return clean(v).slice(0,n);}
 export function crearDocumentoTato({tipo,solicitud={},trabajo={},urlAprobacion='',campos=[]}){
  if(!window.jspdf?.jsPDF)throw new Error('No se cargó el generador de PDF. Comprueba la conexión y actualiza la página.');
@@ -121,9 +121,10 @@ export function crearDocumentoTato({tipo,solicitud={},trabajo={},urlAprobacion='
    note('Valores expresados en pesos chilenos. Trabajos adicionales y cambios de precio deben informarse y aprobarse antes de ejecutarse. La fecha de entrega se confirmará según disponibilidad de repuestos y del taller.');
   }
  }else{
-  section(tipo==='recepcion'?'CONDICIONES AL INGRESO':'REGISTRO DE ENTREGA');
+  section(tipo==='recepcion'?'CONDICIONES AL INGRESO':tipo==='comprobante'?'DATOS DEL PAGO':'REGISTRO DE ENTREGA');
   for(const c of campos){kv(c.label||'Dato',c.value||'Pendiente de completar');}
   if(tipo==='recepcion')note('Registro de ingreso para revisión del cliente y del taller. No representa autorización de trabajos ni firma electrónica.');
+  else if(tipo==='comprobante')note('Comprobante interno de pago. Documento informativo emitido por el taller; NO es boleta, factura ni documento tributario del SII. Los cambios quedan reflejados en el historial.');
   else note('Registro informativo de entrega. La conformidad y documentación definitiva deberán confirmarse con el cliente.');
  }
  need(21);y+=8;doc.setDrawColor(...line);doc.line(L,y,R,y);y+=7;
