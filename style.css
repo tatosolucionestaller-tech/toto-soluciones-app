@@ -129,3 +129,21 @@ body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 #intakeFormalization #formalizationResult:not(:empty){padding:10px 14px;background:#edf9f3;border-radius:8px;margin-top:12px}
 #intakeFormalization #formalizationStatus{padding:10px;border-radius:8px;background:#f4f6f8;margin-bottom:12px}
 @media(max-width:650px){#intakeFormalization .grid{grid-template-columns:1fr}}
+
+/* V26: tablero de órdenes conectadas a su progreso */
+#repairOrdersPanel{border-top:4px solid #13724a}
+#repairOrdersList{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+#repairOrdersList>.repair-order-card{border:1px solid #d9e3e8;border-radius:11px;padding:16px;background:#fff;box-shadow:0 3px 12px rgba(18,35,45,.05);display:flex;flex-direction:column;gap:8px}
+.repair-order-header{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.repair-order-header strong{font-size:16px;color:#182835}
+.repair-order-status{display:inline-flex;padding:5px 9px;background:#e7f3ea;color:#166a3d;border-radius:999px;font-size:11px;font-weight:800}
+.repair-order-card.repair-order-complete{opacity:.78}
+.repair-order-card.repair-order-complete .repair-order-status{background:#ebedf0;color:#58616c}
+.repair-order-card p{margin:0;line-height:1.45;overflow-wrap:anywhere}
+.repair-order-card small{color:#62717d}
+.repair-order-card button{margin-top:auto}
+#progressOrderStatus{background:#f1f7f4;padding:12px 14px;border-left:4px solid #19834f;border-radius:7px}
+#progressForm .phone-toggle{display:flex;align-items:flex-start;gap:9px}
+#progressForm #confirmHandover{flex:none;width:18px;height:18px;margin-top:3px}
+.repair-warning{color:#914e1c;font-size:13px}
+@media(max-width:600px){#repairOrdersList{grid-template-columns:1fr}}

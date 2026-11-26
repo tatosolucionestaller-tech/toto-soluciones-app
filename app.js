@@ -163,7 +163,7 @@ async function issueExpressQuote(item,box){
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
-function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();}if(tab==='dashboard')loadDashboard();}
+function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();loadRepairOrders();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function record(item,staff=false){
  const wrap=node('article',undefined,'record'+(item.priority==='urgent'?' record-urgent':''));
@@ -577,6 +577,7 @@ $('formalizationForm').addEventListener('submit',async e=>{
   await loadStaff();
   $('workflowRequest').value=id;
   await loadFormalizationStatus();
+  await loadRepairOrders();
   $('formalizationResult').append(node('strong','Orden de reparación Nº '+order.order_number+' · '+(order.already_exists?'Ya existía':'Creada correctamente'),'phone-success'));
   loadDashboard();
  }catch(error){notice('No se pudo crear la orden: '+error.message);}
@@ -613,10 +614,97 @@ download.addEventListener('click',()=>{
  }catch(error){notice('No se pudo descargar PDF: '+error.message);}
 });item.append(download);if(q.quote_status==='offered'){const actions=node('div',undefined,'actions');for(const [approve,title] of [[true,'Aprobar'],[false,'Rechazar']]){const b=node('button',title,approve?'':'secondary');b.addEventListener('click',async()=>{if(!confirm(`¿Confirmas que deseas ${approve?'aprobar':'rechazar'} el presupuesto de ${money(q.total_clp)}?`))return;b.disabled=true;const {error}=await db.rpc('decide_intake_quote',{p_request:q.request_id,p_approve:approve});notice(error?'No se pudo registrar tu decisión: '+error.message:'Tu decisión quedó registrada.');await loadQuotes();});actions.append(b);}item.append(actions);}el.append(item);}}
 
+
+/* V26: bandeja de órdenes activa y estado compartido entre taller y cliente. */
+const repairStages={parts_pending:'Esperando repuestos',repairing:'En reparación',quality_check:'Control de calidad',ready_for_pickup:'Listo para retiro',delivered:'Entregado'};
+let orderListLoadNonce=0;
+async function loadRepairOrders(){
+ const el=$('repairOrdersList');
+ if(!isStaff||!currentUser){el.replaceChildren();return;}
+ const ticket=++orderListLoadNonce;
+ el.replaceChildren(node('p','Consultando órdenes de reparación…'));
+ const {data:rows,error}=await db.from('repair_orders')
+   .select('id,order_number,client_id,vehicle_id,status,customer_complaint,diagnosis,opened_at,closed_at')
+   .order('opened_at',{ascending:false}).limit(100);
+ if(ticket!==orderListLoadNonce)return;
+ if(error){el.replaceChildren(node('p','No se pudieron consultar las órdenes: '+error.message));return;}
+ if(!rows?.length){el.replaceChildren(node('p','Todavía no hay órdenes de reparación. Se crearán después de la aprobación y recepción física.'));return;}
+ const ids=rows.map(x=>x.id);
+ const [flows,clients,vehicles,progress]=await Promise.all([
+  db.from('intake_workflow').select('request_id,repair_order_id').in('repair_order_id',ids),
+  db.from('clients').select('id,full_name,phone').in('id',[...new Set(rows.map(x=>x.client_id))]),
+  db.from('vehicles').select('id,plate,make,model').in('id',[...new Set(rows.map(x=>x.vehicle_id))]),
+  db.from('intake_repair_progress').select('request_id,stage,parts_summary,parts_eta_at,estimated_delivery_at').in('request_id',(await db.from('intake_workflow').select('request_id').in('repair_order_id',ids)).data?.map(x=>x.request_id)||[])
+ ]);
+ if(ticket!==orderListLoadNonce)return;
+ const flowMap=new Map((flows.data||[]).map(x=>[x.repair_order_id,x.request_id]));
+ const customerMap=new Map((clients.data||[]).map(x=>[x.id,x]));
+ const vehicleMap=new Map((vehicles.data||[]).map(x=>[x.id,x]));
+ const progressMap=new Map((progress.data||[]).map(x=>[x.request_id,x]));
+ el.replaceChildren();
+ if(flows.error||clients.error||vehicles.error||progress.error)
+  el.append(node('p','Algunos datos complementarios no pudieron consultarse. Las órdenes siguen disponibles.','repair-warning'));
+ const orderPriority={waiting_parts:0,in_progress:1,approved:2,ready:3,open:4,diagnosis:5,awaiting_approval:6,delivered:9,cancelled:10};
+ rows.sort((a,b)=>(orderPriority[a.status]??7)-(orderPriority[b.status]??7)||new Date(b.opened_at)-new Date(a.opened_at));
+ for(const row of rows){
+  const req=flowMap.get(row.id),client=customerMap.get(row.client_id),vehicle=vehicleMap.get(row.vehicle_id);
+  const update=req?progressMap.get(req):null;
+  const card=node('article',undefined,'repair-order-card'+(row.status==='delivered'?' repair-order-complete':''));
+  const heading=node('div',undefined,'repair-order-header');
+  heading.append(node('strong','Orden Nº '+row.order_number));
+  heading.append(node('span',({approved:'Aprobada',in_progress:'En reparación',waiting_parts:'Esperando repuestos',ready:'Lista para retiro',delivered:'Entregada',open:'Abierta',cancelled:'Cancelada'})[row.status]||row.status,'repair-order-status'));
+  card.append(heading,node('p',[vehicle?.plate||'Patente no visible',vehicle?.make,vehicle?.model].filter(Boolean).join(' · ')));
+  if(client)card.append(node('small','Cliente: '+client.full_name));
+  if(update?.stage)card.append(node('p','Avance: '+(repairStages[update.stage]||update.stage)));
+  if(update?.parts_summary)card.append(node('p','Repuestos: '+update.parts_summary));
+  if(update?.parts_eta_at)card.append(node('small','Llegada estimada de repuestos: '+update.parts_eta_at));
+  if(update?.estimated_delivery_at)card.append(node('small','Entrega estimada: '+new Date(update.estimated_delivery_at).toLocaleString('es-CL')));
+  if(req){
+   const select=node('button','Administrar esta orden','secondary');select.type='button';
+   select.addEventListener('click',()=>{
+    $('workflowRequest').value=req;
+    $('workflowRequest').dispatchEvent(new Event('change'));
+    $('progressForm').scrollIntoView({behavior:'smooth',block:'start'});
+    notice('Orden seleccionada. Revisa los repuestos y actualiza su avance al final del Control Center.');
+   });
+   card.append(select);
+  }
+  el.append(card);
+ }
+}
+$('refreshOrders').addEventListener('click',loadRepairOrders);
+
 const stageLabels={parts_pending:'Esperando repuestos',repairing:'En reparación',quality_check:'Control de calidad',ready_for_pickup:'Listo para entrega',delivered:'Entregado'};
 async function loadProgress(){if(!currentUser)return;const el=$('myProgress');el.replaceChildren(node('p','Cargando seguimiento…'));const {data,error}=await db.rpc('my_repair_progress_v2');el.replaceChildren();if(error){notice('Seguimiento no disponible: '+error.message);return;}if(!data?.length){el.append(node('p','No tienes reparaciones en curso.'));return;}for(const x of data){const item=node('article',undefined,'record');item.append(node('strong',stageLabels[x.stage]||x.stage));if(x.customer_message)item.append(node('p',x.customer_message));if(x.parts_summary)item.append(node('p','Repuestos: '+x.parts_summary));if(x.parts_eta_at)item.append(node('small','Llegada estimada de repuestos: '+new Date(x.parts_eta_at+'T12:00:00').toLocaleDateString('es-CL')));if(x.estimated_delivery_at)item.append(node('small','Entrega estimada: '+new Date(x.estimated_delivery_at).toLocaleString('es-CL')));if(x.warranty_until)item.append(node('small','Garantía hasta: '+x.warranty_until));if(x.delivered_at)item.append(node('small','Entregado: '+new Date(x.delivered_at).toLocaleDateString('es-CL')));el.append(item);}}
-$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;const f=$('progressForm');f.reset();if(!id)return;const {data,error}=await db.from('intake_repair_progress').select('*').eq('request_id',id).maybeSingle();if(error){notice(error.message);return;}if(data)for(const k of ['stage','customer_message','internal_notes','parts_summary','parts_eta_at','warranty_until'])f.elements[k].value=data[k]??'';if(data?.estimated_delivery_at)f.elements.estimated_delivery_at.value=dateLocal(data.estimated_delivery_at);});
-$('progressForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('workflowRequest').value;if(!id)return notice('Selecciona primero una solicitud');const {data:approved,error:statusError}=await db.from('intake_workflow').select('quote_status').eq('request_id',id).maybeSingle();if(statusError||approved?.quote_status!=='approved')return notice('El seguimiento solo se habilita cuando el cliente haya aprobado el presupuesto.');const f=e.target.elements;const payload={request_id:id,stage:f.stage.value,customer_message:f.customer_message.value.trim()||null,parts_summary:f.parts_summary.value.trim()||null,parts_eta_at:f.parts_eta_at.value||null,estimated_delivery_at:f.estimated_delivery_at.value?isoLocal(f.estimated_delivery_at.value):null,internal_notes:f.internal_notes.value.trim()||null,warranty_until:f.warranty_until.value||null};const {error}=await db.from('intake_repair_progress').upsert(payload,{onConflict:'request_id'});notice(error?'No se pudo guardar avance: '+error.message:'Avance de reparación guardado.');});
+$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;const f=$('progressForm');f.reset();$('confirmHandover').checked=false;$('progressOrderStatus').textContent='Comprobando orden de reparación…';if(!id){$('progressOrderStatus').textContent='Selecciona una solicitud con orden activa.';return;}const {data:workflow}=await db.from('intake_workflow').select('repair_order_id,quote_status').eq('request_id',id).maybeSingle();if(workflow?.repair_order_id){const {data:order}=await db.from('repair_orders').select('order_number,status').eq('id',workflow.repair_order_id).maybeSingle();$('progressOrderStatus').textContent=order?'Orden Nº '+order.order_number+' · estado: '+order.status:'Orden activa, consulta sus datos.';}else $('progressOrderStatus').textContent='Esta solicitud todavía no tiene orden. Necesita presupuesto aprobado y recepción física.';const {data,error}=await db.from('intake_repair_progress').select('*').eq('request_id',id).maybeSingle();if(error){notice(error.message);return;}if(data)for(const k of ['stage','customer_message','internal_notes','parts_summary','parts_eta_at','warranty_until'])f.elements[k].value=data[k]??'';if(data?.estimated_delivery_at)f.elements.estimated_delivery_at.value=dateLocal(data.estimated_delivery_at);});
+$('progressForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const id=$('workflowRequest').value,btn=$('saveRepairStage');
+ if(!isStaff||!id)return notice('Selecciona una orden de reparación.');
+ const f=e.target.elements;
+ if(f.stage.value==='delivered'&&!$('confirmHandover').checked)return notice('Debes confirmar la entrega física antes de marcar Entregado.');
+ if(f.stage.value==='delivered'&&!confirm('¿Confirmas que el vehículo fue entregado al cliente? Esto cerrará la orden de reparación.'))return;
+ if(btn.disabled)return;
+ btn.disabled=true;btn.textContent='Guardando avance…';
+ try{
+  const {data,error}=await db.rpc('staff_set_repair_stage',{
+   p_request_id:id,p_stage:f.stage.value,p_customer_message:f.customer_message.value.trim()||null,
+   p_parts_summary:f.parts_summary.value.trim()||null,p_parts_eta_at:f.parts_eta_at.value||null,
+   p_estimated_delivery_at:f.estimated_delivery_at.value?isoLocal(f.estimated_delivery_at.value):null,
+   p_internal_notes:f.internal_notes.value.trim()||null,p_warranty_until:f.warranty_until.value||null,
+   p_confirm_handover:!!$('confirmHandover').checked
+  });
+  if(error)throw error;
+  const row=Array.isArray(data)?data[0]:data;
+  if(!row?.order_id)throw Error('No se recibió confirmación de la orden.');
+  $('confirmHandover').checked=false;
+  $('progressOrderStatus').textContent='Orden Nº '+row.order_number+' · '+(repairStages[row.stage]||row.stage)+' · sincronizada.';
+  notice('Orden y seguimiento del cliente actualizados correctamente.');
+  await loadRepairOrders();
+  loadDashboard();
+ }catch(error){notice('No se pudo guardar el avance: '+error.message);}
+ finally{btn.disabled=false;btn.textContent='Guardar etapa y sincronizar orden';}
+});
 
 // Customer-scoped history: no global plate lookup. Every record comes from the authenticated user's own request query.
 async function loadHistory(){
