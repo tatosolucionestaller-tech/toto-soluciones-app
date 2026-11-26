@@ -11,6 +11,22 @@
 </div>
 <div id="repairOrdersList" aria-live="polite"><p>Abre esta sección para consultar las órdenes.</p></div>
 </section>
+<section class="card inner" id="cashPanel">
+<div class="queue-heading"><span class="eyebrow">TALLER · TESORERÍA</span><h2>Caja y abonos de reparación</h2>
+<p>Registra únicamente pagos que Tato ya haya recibido o confirmado en el banco o terminal. El módulo no procesa tarjetas ni realiza transferencias. Cada abono se asocia a su orden y reduce el saldo de su presupuesto aprobado.</p></div>
+<form id="cashForm">
+<label>Orden de reparación *<select id="cashOrderSelect" name="repair_order_id" required><option value="">Selecciona una orden</option></select></label>
+<div id="cashBalance" class="cash-balance" role="status" aria-live="polite">Selecciona una orden para consultar el total, los abonos y el saldo.</div>
+<div class="grid"><label>Abono recibido en pesos chilenos *<input type="number" name="amount_clp" min="1" max="100000000" step="1" required placeholder="Ej.: 15000"></label>
+<label>Medio de pago *<select name="method" required><option value="cash">Efectivo</option><option value="transfer">Transferencia bancaria</option><option value="debit_card">Tarjeta de débito</option><option value="credit_card">Tarjeta de crédito</option><option value="other">Otro</option></select></label></div>
+<label>Referencia o comprobante (obligatorio para pagos electrónicos)<input name="reference" maxlength="180" placeholder="Nº de transacción o comprobante"></label>
+<label>Observaciones internas<input name="notes" maxlength="1000" placeholder="Abono confirmado por Tato"></label>
+<label class="phone-toggle"><input type="checkbox" name="received_confirmed" required> Confirmo que el dinero fue recibido o verificado en la cuenta del taller. No estoy registrando una promesa de pago.</label>
+<button type="submit" id="cashSave" disabled>Registrar abono recibido</button>
+</form>
+<div id="cashHistory" aria-live="polite"></div>
+<p class="hint">Este registro no reemplaza una boleta o factura del SII. Los pagos anulados y devoluciones requieren un proceso de corrección controlado que aún está pendiente.</p>
+</section>
 <section class="card inner" id="phoneIntakePanel">
 <div class="queue-heading"><span class="eyebrow">RECEPCIÓN TELEFÓNICA · SOLO PERSONAL</span><h2>Agendar cliente que llama</h2><p>Si el cliente llama a Tato, registra su atención aquí. No necesita entrar a la web ni crear una clave. El puesto se reserva únicamente cuando completas inicio, fin y puesto y guardas correctamente.</p></div>
 <form id="phoneIntakeForm">

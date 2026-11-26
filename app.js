@@ -163,7 +163,7 @@ async function issueExpressQuote(item,box){
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
-function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();loadRepairOrders();}if(tab==='dashboard')loadDashboard();}
+function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();loadRepairOrders();loadCashOrders();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function record(item,staff=false){
  const wrap=node('article',undefined,'record'+(item.priority==='urgent'?' record-urgent':''));
@@ -674,6 +674,106 @@ async function loadRepairOrders(){
 }
 $('refreshOrders').addEventListener('click',loadRepairOrders);
 
+
+/* V27: caja por orden. Solo registra dinero efectivamente recibido. */
+let pendingCashKey=crypto.randomUUID();
+let cashierLookup={};
+let cashierLoadNonce=0;
+async function loadCashOrders(){
+ const select=$('cashOrderSelect'),previous=select.value;
+ select.replaceChildren(new Option('Selecciona una orden',''));
+ cashierLookup={};
+ const {data:orders,error}=await db.from('repair_orders')
+  .select('id,order_number,quote_id,client_id,status').neq('status','cancelled')
+  .order('opened_at',{ascending:false}).limit(100);
+ if(error){$('cashBalance').textContent='No se pudieron leer las órdenes: '+error.message;return;}
+ const quoteIds=[...new Set((orders||[]).map(o=>o.quote_id).filter(Boolean))];
+ const {data:quotes,error:quoteError}=quoteIds.length?
+   await db.from('quotes').select('id,total,status').in('id',quoteIds):
+   {data:[],error:null};
+ if(quoteError){$('cashBalance').textContent='No se pudieron consultar los presupuestos: '+quoteError.message;return;}
+ const qmap=new Map((quotes||[]).map(q=>[q.id,q]));
+ for(const o of orders||[]){
+  const quote=qmap.get(o.quote_id);
+  if(!quote||!['converted','approved'].includes(quote.status))continue;
+  cashierLookup[o.id]={...o,total:Number(quote.total)};
+  select.add(new Option('Orden Nº '+o.order_number+' · '+money(quote.total),o.id));
+ }
+ if(previous&&cashierLookup[previous])select.value=previous;
+ await loadCashForOrder();
+}
+async function loadCashForOrder(){
+ const id=$('cashOrderSelect').value,seq=++cashierLoadNonce;
+ const panel=$('cashBalance'),history=$('cashHistory'),save=$('cashSave');
+ save.disabled=true;history.replaceChildren();
+ if(!id||!cashierLookup[id]){
+  panel.textContent='Selecciona una orden para consultar el total, los abonos y el saldo.';
+  return;
+ }
+ panel.textContent='Calculando saldo…';
+ const {data:payments,error}=await db.from('payments')
+  .select('id,amount,method,status,reference,paid_at,recorded_by')
+  .eq('repair_order_id',id).order('paid_at',{ascending:false}).limit(200);
+ if(seq!==cashierLoadNonce||$('cashOrderSelect').value!==id)return;
+ if(error){panel.textContent='No se pudieron consultar los abonos: '+error.message;return;}
+ const paid=(payments||[]).filter(x=>x.status==='paid').reduce((a,x)=>a+Number(x.amount),0);
+ const total=cashierLookup[id].total,balance=Math.max(0,total-paid);
+ panel.replaceChildren();
+ panel.append(node('strong','Presupuesto '+money(total)));
+ panel.append(node('p','Abonos confirmados: '+money(paid)));
+ panel.append(node('p','Saldo pendiente: '+money(balance),'cash-remaining'));
+ if(balance<=0){
+  history.append(node('p','La orden está pagada. No se admiten más abonos.','cash-done'));
+  return;
+ }
+ save.disabled=false;
+ const amountInput=$('cashForm').elements.amount_clp;
+ amountInput.max=String(Math.round(balance));
+ for(const payment of payments||[]){
+  const row=node('article',undefined,'cash-payment');
+  const methodNames={cash:'Efectivo',transfer:'Transferencia',debit_card:'Débito',credit_card:'Crédito',other:'Otro'};
+  row.append(node('strong',money(payment.amount)+' · '+(methodNames[payment.method]||payment.method)),
+   node('small',new Date(payment.paid_at).toLocaleString('es-CL')+' · '+payment.status));
+  if(payment.reference)row.append(node('small','Referencia: '+payment.reference));
+  history.append(row);
+ }
+}
+$('cashOrderSelect').addEventListener('change',()=>{
+ pendingCashKey=crypto.randomUUID();$('cashForm').elements.amount_clp.value='';
+ loadCashForOrder();
+});
+$('cashForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ if(!isStaff)return notice('Solo personal del taller puede registrar abonos.');
+ const f=event.target.elements,orderId=f.repair_order_id.value,btn=$('cashSave');
+ if(!cashierLookup[orderId]||btn.disabled)return notice('Selecciona una orden con saldo.');
+ const amount=Number(f.amount_clp.value);
+ if(!Number.isSafeInteger(amount)||amount<=0||amount>100000000)return notice('Introduce un monto válido.');
+ if(!f.received_confirmed.checked)return notice('Debes confirmar que Tato recibió el dinero.');
+ const method=f.method.value,reference=f.reference.value.trim();
+ if(['transfer','debit_card','credit_card'].includes(method)&&reference.length<3)
+  return notice('Los pagos electrónicos necesitan número de operación o comprobante.');
+ if(!confirm('¿Confirmas que Tato recibió '+money(amount)+'? Este registro no realiza ningún cobro bancario.'))return;
+ btn.disabled=true;btn.textContent='Guardando abono…';
+ try{
+  const {data,error}=await db.rpc('staff_record_order_payment',{
+   p_order_id:orderId,p_receipt_key:pendingCashKey,p_amount_clp:amount,
+   p_method:method,p_reference:reference||null,p_notes:f.notes.value.trim()||null,
+   p_received_confirmed:true
+  });
+  if(error)throw error;
+  const row=Array.isArray(data)?data[0]:data;
+  if(!row?.payment_id)throw Error('La base de datos no confirmó el abono.');
+  pendingCashKey=crypto.randomUUID();
+  const chosen=orderId;
+  $('cashForm').reset();
+  $('cashOrderSelect').value=chosen;
+  notice('Abono registrado: '+money(row.amount_clp)+'. Saldo restante: '+money(row.balance_clp)+'.');
+  await loadCashForOrder();
+ }catch(err){notice('No fue posible registrar el abono: '+err.message);}
+ finally{btn.textContent='Registrar abono recibido';if(btn.disabled&&$('cashOrderSelect').value&&cashierLookup[$('cashOrderSelect').value]){const max=Number($('cashForm').elements.amount_clp.max);btn.disabled=!(Number.isFinite(max)&&max>0);}}
+});
+
 const stageLabels={parts_pending:'Esperando repuestos',repairing:'En reparación',quality_check:'Control de calidad',ready_for_pickup:'Listo para entrega',delivered:'Entregado'};
 async function loadProgress(){if(!currentUser)return;const el=$('myProgress');el.replaceChildren(node('p','Cargando seguimiento…'));const {data,error}=await db.rpc('my_repair_progress_v2');el.replaceChildren();if(error){notice('Seguimiento no disponible: '+error.message);return;}if(!data?.length){el.append(node('p','No tienes reparaciones en curso.'));return;}for(const x of data){const item=node('article',undefined,'record');item.append(node('strong',stageLabels[x.stage]||x.stage));if(x.customer_message)item.append(node('p',x.customer_message));if(x.parts_summary)item.append(node('p','Repuestos: '+x.parts_summary));if(x.parts_eta_at)item.append(node('small','Llegada estimada de repuestos: '+new Date(x.parts_eta_at+'T12:00:00').toLocaleDateString('es-CL')));if(x.estimated_delivery_at)item.append(node('small','Entrega estimada: '+new Date(x.estimated_delivery_at).toLocaleString('es-CL')));if(x.warranty_until)item.append(node('small','Garantía hasta: '+x.warranty_until));if(x.delivered_at)item.append(node('small','Entregado: '+new Date(x.delivered_at).toLocaleDateString('es-CL')));el.append(item);}}
 $('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;const f=$('progressForm');f.reset();$('confirmHandover').checked=false;$('progressOrderStatus').textContent='Comprobando orden de reparación…';if(!id){$('progressOrderStatus').textContent='Selecciona una solicitud con orden activa.';return;}const {data:workflow}=await db.from('intake_workflow').select('repair_order_id,quote_status').eq('request_id',id).maybeSingle();if(workflow?.repair_order_id){const {data:order}=await db.from('repair_orders').select('order_number,status').eq('id',workflow.repair_order_id).maybeSingle();$('progressOrderStatus').textContent=order?'Orden Nº '+order.order_number+' · estado: '+order.status:'Orden activa, consulta sus datos.';}else $('progressOrderStatus').textContent='Esta solicitud todavía no tiene orden. Necesita presupuesto aprobado y recepción física.';const {data,error}=await db.from('intake_repair_progress').select('*').eq('request_id',id).maybeSingle();if(error){notice(error.message);return;}if(data)for(const k of ['stage','customer_message','internal_notes','parts_summary','parts_eta_at','warranty_until'])f.elements[k].value=data[k]??'';if(data?.estimated_delivery_at)f.elements.estimated_delivery_at.value=dateLocal(data.estimated_delivery_at);});
@@ -701,6 +801,7 @@ $('progressForm').addEventListener('submit',async e=>{
   $('progressOrderStatus').textContent='Orden Nº '+row.order_number+' · '+(repairStages[row.stage]||row.stage)+' · sincronizada.';
   notice('Orden y seguimiento del cliente actualizados correctamente.');
   await loadRepairOrders();
+  await loadCashOrders();
   loadDashboard();
  }catch(error){notice('No se pudo guardar el avance: '+error.message);}
  finally{btn.disabled=false;btn.textContent='Guardar etapa y sincronizar orden';}
