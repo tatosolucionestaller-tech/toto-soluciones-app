@@ -78,6 +78,107 @@ function emailManual(pdf,email,message){
  window.open('mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body),'_blank','noopener,noreferrer');
  return Promise.resolve('downloaded');
 }
+
+/* V29: archivo privado, vinculado por solicitud y visible al cliente solo tras activar acceso. */
+const archiveBucket='tato-expedientes',archiveTypes=new Set(['prediagnostico','presupuesto','recepcion','entrega','comprobante','foto','otro']);
+let archiveNonce=0;
+const mimeForFile=(file)=>{
+ const type=String(file?.type||'').toLowerCase();
+ return ['application/pdf','image/jpeg','image/png','image/webp'].includes(type)?type:null;
+};
+function archiveFormatBytes(bytes){
+ return bytes>=1024*1024?(bytes/(1024*1024)).toFixed(1)+' MB':Math.round(bytes/1024)+' KB';
+}
+async function archiveUpload(requestId,file,{title,documentType,sharedWithCustomer=false}={}){
+ if(!isStaff||!currentUser)throw Error('Esta operación requiere personal del taller.');
+ if(!requestId||!archiveTypes.has(documentType))throw Error('Selecciona una solicitud y un tipo de archivo.');
+ if(!file||file.size<1||file.size>8388608)throw Error('El archivo debe ocupar entre 1 byte y 8 MB.');
+ const mime=mimeForFile(file);
+ if(!mime)throw Error('Solo se aceptan PDF, JPG, PNG y WebP.');
+ const displayTitle=String(title||'').trim();
+ if(displayTitle.length<3||displayTitle.length>180)throw Error('Escribe un título de 3 a 180 caracteres.');
+ const {data:previous,error:checkError}=await db.from('tato_documents').select('version')
+  .eq('request_id',requestId).eq('document_type',documentType).order('version',{ascending:false}).limit(1);
+ if(checkError)throw Error('No se pudo revisar el historial: '+checkError.message);
+ const version=(previous?.[0]?.version||0)+1;
+ const extension=({'application/pdf':'pdf','image/jpeg':'jpg','image/png':'png','image/webp':'webp'})[mime];
+ const path=requestId+'/'+crypto.randomUUID()+'.'+extension;
+ const {error:uploadError}=await db.storage.from(archiveBucket).upload(path,file,{contentType:mime,upsert:false,cacheControl:'3600'});
+ if(uploadError)throw Error('No se pudo almacenar el archivo: '+uploadError.message);
+ const {error:saveError}=await db.from('tato_documents').insert({
+  request_id:requestId,document_type:documentType,version,title:displayTitle,storage_path:path,
+  mime_type:mime,bytes:file.size,shared_with_customer:Boolean(sharedWithCustomer),recorded_by:currentUser.id
+ });
+ if(saveError)throw Error('El archivo se subió, pero no se pudo registrar. Notifica al administrador para revisar el expediente: '+saveError.message);
+ await loadArchiveForRequest();
+ return {version,path};
+}
+async function downloadArchiveFile(row){
+ const {data,error}=await db.storage.from(archiveBucket).download(row.storage_path);
+ if(error)throw Error('No se pudo descargar el archivo privado: '+error.message);
+ const ext={'application/pdf':'pdf','image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[row.mime_type]||'bin';
+ const name='TATO_'+row.document_type.toUpperCase()+'_'+row.request_id.slice(0,8).toUpperCase()+'_v'+row.version+'.'+ext;
+ descargarDocumento(data,name);
+}
+function displayArchiveDoc(container,row){
+ const card=node('article',undefined,'archive-item');
+ const heading=node('strong',row.title+' · Versión '+row.version);
+ const text=node('small',new Date(row.created_at).toLocaleString('es-CL')+' · '+archiveFormatBytes(row.bytes)+(row.shared_with_customer?' · Compartido con el cliente':' · Privado del taller'));
+ card.append(heading,text);
+ const download=node('button','Descargar archivo privado','secondary');download.type='button';
+ download.addEventListener('click',async()=>{
+  download.disabled=true;
+  try{await downloadArchiveFile(row);}
+  catch(e){notice(e.message);}
+  finally{download.disabled=false;}
+ });
+ card.append(download);container.append(card);
+}
+async function loadArchiveForRequest(){
+ const id=$('workflowRequest').value,el=$('archiveFiles'),request=++archiveNonce;
+ el.replaceChildren();
+ if(!isStaff||!id){el.append(node('p','Selecciona una solicitud para consultar su expediente.'));return;}
+ el.append(node('p','Cargando documentos privados…'));
+ const {data,error}=await db.from('tato_documents')
+  .select('id,request_id,document_type,version,title,storage_path,mime_type,bytes,shared_with_customer,created_at')
+  .eq('request_id',id).order('created_at',{ascending:false}).limit(200);
+ if(request!==archiveNonce||id!==$('workflowRequest').value)return;
+ el.replaceChildren();
+ if(error){el.append(node('p','No se pudo consultar el expediente: '+error.message));return;}
+ if(!data?.length){el.append(node('p','Esta solicitud todavía no tiene documentos archivados.'));return;}
+ for(const x of data)displayArchiveDoc(el,x);
+}
+async function loadMyDocuments(){
+ const el=$('myDocuments');
+ if(!currentUser||isStaff){el.replaceChildren();return;}
+ el.replaceChildren(node('p','Consultando documentos compartidos…'));
+ const {data,error}=await db.from('tato_documents')
+  .select('id,request_id,document_type,version,title,storage_path,mime_type,bytes,shared_with_customer,created_at')
+  .eq('shared_with_customer',true).order('created_at',{ascending:false}).limit(100);
+ el.replaceChildren();
+ if(error){el.append(node('p','No pudimos recuperar tus documentos: '+error.message));return;}
+ if(!data?.length){el.append(node('p','Todavía no tienes documentos digitales compartidos por el taller.'));return;}
+ for(const x of data)displayArchiveDoc(el,x);
+}
+$('archiveUploadForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ const id=$('workflowRequest').value,button=$('archiveUploadButton'),f=event.target.elements;
+ if(!id)return notice('Selecciona primero una solicitud en la agenda.');
+ const file=f.attachment.files?.[0];
+ if(button.disabled)return;
+ button.disabled=true;
+ try{
+  const saved=await archiveUpload(id,file,{
+   title:f.title.value,documentType:f.document_type.value,
+   sharedWithCustomer:f.shared_with_customer.checked
+  });
+  notice('Archivo guardado en el expediente (versión '+saved.version+').');
+  event.target.reset();
+ }catch(error){notice(error.message);}
+ finally{button.disabled=false;}
+});
+$('workflowRequest').addEventListener('change',loadArchiveForRequest);
+
 function montarAccionesDocumento(holder,pdf,{phone='',email='',requestId='',message=''}={}){
  const row=node('div',undefined,'pdf-actions');
  const save=node('button','Descargar PDF','secondary');save.type='button';
@@ -92,6 +193,23 @@ function montarAccionesDocumento(holder,pdf,{phone='',email='',requestId='',mess
   }catch(error){notice('No se pudo compartir: '+error.message);}
  });
  row.append(save,share);
+ if(requestId&&isStaff){
+  const store=node('button','Guardar PDF en expediente privado','secondary');store.type='button';
+  store.addEventListener('click',async()=>{
+   store.disabled=true;
+   try{
+    const type=pdf.filename.match(/^TATO_(PREDIAGNOSTICO|PRESUPUESTO|RECEPCION|ENTREGA|COMPROBANTE)_/i)?.[1]?.toLowerCase();
+    if(!type)throw Error('Tipo de documento no compatible.');
+    const makeVisible=confirm('¿Compartir también este PDF dentro de la cuenta personal del cliente? Aceptar = sí; Cancelar = guardar privado para el taller.');
+    const file=new File([pdf.blob],pdf.filename,{type:'application/pdf'});
+    const res=await archiveUpload(requestId,file,{title:pdf.title,documentType:type,sharedWithCustomer:makeVisible});
+    store.textContent='Guardado · v'+res.version;
+    notice('Documento archivado de forma privada con versión '+res.version+'.');
+   }catch(error){notice('No se pudo guardar el documento: '+error.message);}
+   finally{store.disabled=false;}
+  });
+  row.append(store);
+ }
  if(email){
   const mail=node('button','Enviar por correo','secondary');mail.type='button';
   let attemptId=crypto.randomUUID();
@@ -163,7 +281,7 @@ async function issueExpressQuote(item,box){
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
-function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();loadRepairOrders();loadCashOrders();}if(tab==='dashboard')loadDashboard();}
+function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();loadMyDocuments();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();loadRepairOrders();loadCashOrders();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function record(item,staff=false){
  const wrap=node('article',undefined,'record'+(item.priority==='urgent'?' record-urgent':''));

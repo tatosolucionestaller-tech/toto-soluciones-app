@@ -128,7 +128,7 @@ export function crearDocumentoTato({tipo,solicitud={},trabajo={},urlAprobacion='
   else note('Registro informativo de entrega. La conformidad y documentación definitiva deberán confirmarse con el cliente.');
  }
  need(21);y+=8;doc.setDrawColor(...line);doc.line(L,y,R,y);y+=7;
- font(8,false,gray);doc.text('Tato Soluciones  |  Arica, Chile  |  Contacto: +56 9 9934 6293',L,y);
+ font(8,false,gray);doc.text('Tato Soluciones  |  Arica, Chile  |  Contacto mediante canales oficiales del taller',L,y);
  doc.text('ID interno: '+clip(solicitud.id||'Sin solicitud',80),L,y+5);
  const total=doc.getNumberOfPages();
  for(let i=1;i<=total;i++){

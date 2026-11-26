@@ -174,3 +174,17 @@ body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 #cashPanel #cashReport{padding:12px 14px;border-radius:9px;background:#f6f8f9;margin-top:12px}
 #cashPanel .cash-payment>button{align-self:flex-start;min-width:205px}
 #cashPanel #cashCloseDay[disabled]{opacity:.5;cursor:not-allowed}
+
+/* V29 - expediente privado por vehículo y acceso del cliente */
+#vehicleArchivePanel{border-top:4px solid #196a5c}
+#vehicleArchivePanel .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+#vehicleArchivePanel .phone-toggle{display:flex;align-items:flex-start;gap:9px;padding:12px 14px;border-radius:9px;background:#f3f8f7;border:1px solid #d5e4de;margin:13px 0}
+#vehicleArchivePanel .phone-toggle input[type=checkbox]{flex:none;width:18px;height:18px;margin:3px 0 0}
+#archiveFiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:20px}
+.archive-item{display:flex;flex-direction:column;gap:8px;padding:13px;border:1px solid #dae5e3;border-radius:9px;background:#fff;min-width:0}
+.archive-item strong{font-size:14px;overflow-wrap:anywhere}
+.archive-item small{display:block;color:#61717a;line-height:1.5}
+.archive-item button{margin-top:auto;white-space:normal!important}
+#myDocuments{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:20px}
+#myDocuments>.archive-item{background:#f6f9fa}
+@media(max-width:650px){#vehicleArchivePanel .grid,#archiveFiles,#myDocuments{grid-template-columns:1fr}}
