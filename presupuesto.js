@@ -1,4 +1,5 @@
 import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from './config.js';
+import {crearDocumentoTato,descargarDocumento,compartirDocumento} from './documentos-pdf.js';
 const $=id=>document.getElementById(id);
 const API=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/express-quote';
 const KEY='tato_quote_access_v1';
@@ -8,6 +9,26 @@ if(fromUrl){
  history.replaceState(null,'',location.pathname);
 }
 const token=sessionStorage.getItem(KEY)||'';
+let loadedQuote=null;
+function quotePdf(){
+ if(!loadedQuote)throw new Error('Todavía no se ha cargado el presupuesto.');
+ return crearDocumentoTato({
+  tipo:'presupuesto',solicitud:{id:loadedQuote.request_id},urlAprobacion:location.origin+'/presupuesto.html?token='+encodeURIComponent(token),
+  trabajo:{public_scope:loadedQuote.description,labor_clp:loadedQuote.labor_clp,parts_clp:loadedQuote.parts_clp,tax_clp:loadedQuote.tax_clp}
+ });
+}
+$('download_quote').addEventListener('click',()=>{
+ try{const pdf=quotePdf();descargarDocumento(pdf.blob,pdf.filename);}
+ catch(err){errorText('No se pudo generar el PDF: '+err.message);}
+});
+$('share_quote').addEventListener('click',async()=>{
+ try{
+  const pdf=quotePdf();
+  const result=await compartirDocumento({blob:pdf.blob,filename:pdf.filename,title:pdf.title,
+   message:'Presupuesto de Tato Soluciones. Para aprobar o rechazar abre el enlace privado incluido en el documento.'});
+  if(result==='downloaded')errorText('PDF descargado. Abre WhatsApp y adjunta el archivo para enviarlo.');
+ }catch(err){if(err.name!=='AbortError')errorText('No se pudo compartir: '+err.message);}
+});
 const fmt=n=>new Intl.NumberFormat('es-CL',{style:'currency',currency:'CLP',maximumFractionDigits:0}).format(n||0);
 const errorText=text=>{$('status_message').textContent=text;};
 async function send(action,extra={}){
@@ -30,7 +51,7 @@ function state(status){
 async function load(){
  if(!token){$('loading').textContent='El enlace de presupuesto no está disponible. Solicita uno nuevo al taller.';return;}
  try{
-  const data=await send('view');
+  const data=await send('view');loadedQuote=data;
   $('loading').hidden=true;$('quote').hidden=false;
   $('scope').textContent=data.description||'Trabajo de reparación propuesto por el taller';
   $('labor').textContent=fmt(data.labor_clp);

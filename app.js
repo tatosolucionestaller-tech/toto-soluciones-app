@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.0';
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
-import { validSlot, quoteTotal, quoteText, chileLocalToIso } from './workflow-utils.mjs';
+import { validSlot, quoteTotal, chileLocalToIso } from './workflow-utils.mjs';
+import { crearDocumentoTato, descargarDocumento, compartirDocumento } from './documentos-pdf.js';
 const $ = id => document.getElementById(id);
 const configured = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes('YOUR_PROJECT') && !SUPABASE_PUBLISHABLE_KEY.includes('YOUR_PUBLIC_KEY');
 const db = configured ? createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY) : null;
@@ -40,6 +41,37 @@ async function claimApprovedQuote(session){
  }catch(err){notice('Para vincular la solicitud Express: '+err.message);}
  finally{claimInProgress=false;}
 }
+
+function montarAccionesDocumento(holder,pdf,{phone='',message=''}={}){
+ const row=node('div',undefined,'pdf-actions');
+ const save=node('button','Descargar PDF','secondary');save.type='button';
+ save.addEventListener('click',()=>{descargarDocumento(pdf.blob,pdf.filename);notice('PDF descargado. Puedes guardarlo o adjuntarlo a WhatsApp.');});
+ const share=node('button','Compartir PDF por WhatsApp','pdf-share');share.type='button';
+ share.addEventListener('click',()=>{
+  try{
+   const result=compartirDocumento({blob:pdf.blob,filename:pdf.filename,title:pdf.title,message,phone});
+   Promise.resolve(result).then((out)=>{
+    notice(out==='downloaded'?'PDF descargado. Adjunta el archivo en el chat que se abrió.':'Elige WhatsApp y el destinatario para compartir el documento.');
+   }).catch(error=>{
+    if(error?.name!=='AbortError')notice('No se pudo compartir: '+(error?.message||'revisa permisos del navegador'));
+   });
+  }catch(error){notice('No se pudo compartir: '+error.message);}
+ });
+ row.append(save,share);holder.append(row);
+ const hint=node('small','En móviles compatibles usa Compartir. En computador descarga el PDF y adjúntalo en WhatsApp Web. El archivo NO se envía sin tu confirmación.','pdf-instructions');holder.append(hint);
+}
+async function prepararFichaPdf(item,holder){
+ const {data:work,error}=await db.from('intake_workflow')
+   .select('diagnosis,diagnosis_tests,public_scope').eq('request_id',item.id).maybeSingle();
+ if(error)throw Error('No se pudo consultar el prediagnóstico: '+error.message);
+ const pdf=crearDocumentoTato({tipo:'prediagnostico',solicitud:item,trabajo:work||{}});
+ const box=node('div',undefined,'pdf-packet');
+ box.append(node('strong','Ficha de atención · '+pdf.filename));
+ montarAccionesDocumento(box,pdf,{phone:item.customer_phone,
+  message:'Hola, somos Tato Soluciones. Te compartimos tu ficha de atención preliminar '+item.id.slice(0,8).toUpperCase()+'. No autoriza reparaciones.'});
+ holder.append(box);
+}
+
 async function issueExpressQuote(item,box){
  const {data:{session}}=await db.auth.getSession();
  if(!session?.access_token)throw Error('Inicia sesión en el panel del taller.');
@@ -59,6 +91,17 @@ async function issueExpressQuote(item,box){
   wa.target='_blank';wa.rel='noopener noreferrer';share.append(wa);
  }
  box.append(share);
+ try {
+  const {data:work,error}=await db.from('intake_workflow')
+   .select('public_scope,labor_clp,parts_clp,tax_clp,quote_status')
+   .eq('request_id',item.id).single();
+  if(error)throw Error(error.message);
+  if(work?.quote_status!=='offered')throw Error('El presupuesto aún no se encuentra ofrecido.');
+  const pdf=crearDocumentoTato({tipo:'presupuesto',solicitud:item,trabajo:work,urlAprobacion:res.url});
+  share.append(node('strong','Documento profesional listo · '+pdf.filename));
+  montarAccionesDocumento(share,pdf,{phone:item.customer_phone,
+   message:'Hola, somos Tato Soluciones. Adjuntamos el presupuesto de tu vehículo. Revísalo y aprueba o rechaza en este enlace privado: '+res.url});
+ }catch(error){share.append(node('p','El enlace de aprobación está listo, pero no pudimos generar el PDF: '+error.message,'pdf-error'));}
 }
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
@@ -81,6 +124,14 @@ function record(item,staff=false){
    link.target='_blank';link.rel='noopener noreferrer';wrap.append(link);
   }
   if(item.customer_email)wrap.append(node('div','Correo: '+item.customer_email,'contact-email'));
+  const pre=node('button','Preparar ficha de atención PDF','secondary');pre.type='button';
+  pre.addEventListener('click',async()=>{
+   pre.disabled=true;
+   try{await prepararFichaPdf(item,wrap);pre.textContent='Preparar otra copia PDF';notice('Ficha preliminar lista para compartir.');}
+   catch(error){notice('No se pudo generar la ficha: '+error.message);}
+   finally{pre.disabled=false;}
+  });
+  wrap.append(pre);
   if(item.intake_source==='web_express'){
    if(item.quote_status==='offered'){
    const issue=node('button','Crear enlace seguro de presupuesto','secondary');
@@ -162,7 +213,7 @@ async function loadDashboard(){
 }
 
 async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
-async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>x.intake_source==='web_express').map(x=>x.id);
+async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>x.intake_source==='web_express').map(x=>x.id);
 if(expressIds.length){
  const {data:budgets,error:budgetError}=await db.from('intake_workflow').select('request_id,quote_status').in('request_id',expressIds);
  if(!budgetError){
@@ -195,12 +246,18 @@ for(const x of ['labor_clp','parts_clp','tax_clp'])$('workflowForm').elements[x]
 function workflowPayload(){const f=$('workflowForm').elements;const id=f.request_id.value;if(!id)throw Error('Selecciona una solicitud');const start=f.appointment_at.value,end=f.appointment_end.value,station=f.workstation_id.value;if((start||end||station)&&!(start&&end&&station))throw Error('Completa inicio, fin y puesto, o deja los tres vacíos');if(start&&!validSlot(isoLocal(start),isoLocal(end)))throw Error('Reserva fuera de horario (lunes a viernes 08:30–17:00 Chile) o intervalo inválido');const data={request_id:id,appointment_at:isoLocal(start),appointment_end:isoLocal(end),workstation_id:station?Number(station):null};for(const key of ['diagnosis','diagnosis_tests','public_scope'])data[key]=f[key].value.trim()||null;for(const key of ['labor_clp','parts_clp','tax_clp','internal_cost_clp']){data[key]=Number(f[key].value||0);if(!Number.isSafeInteger(data[key])||data[key]<0)throw Error('Monto inválido');}quoteTotal(data.labor_clp,data.parts_clp,data.tax_clp);return data;}
 async function saveWorkflow(offer=false){try{const data=workflowPayload();const {data:existing,error:lookupError}=await db.from('intake_workflow').select('quote_status').eq('request_id',data.request_id).maybeSingle();if(lookupError)throw lookupError;if(existing?.quote_status!=='draft'&&existing)throw Error('Presupuesto ya ofrecido o decidido. No puede modificarse desde este formulario.');if(offer){if(!data.public_scope||data.public_scope.length<10)throw Error('Describe claramente los trabajos ofrecidos');data.quote_status='offered';}const {error}=await db.from('intake_workflow').upsert(data,{onConflict:'request_id'});if(error)throw error;notice(offer?'Presupuesto ofrecido. Ahora puedes crear el enlace seguro y enviarlo al cliente por WhatsApp.':'Borrador guardado.');$('offerQuote').disabled=offer;if(offer)await loadStaff();}catch(e){notice('No se pudo guardar: '+e.message);}}
 $('workflowForm').addEventListener('submit',e=>{e.preventDefault();saveWorkflow(false)});$('offerQuote').addEventListener('click',()=>saveWorkflow(true));
-async function loadQuotes(){if(!currentUser)return;const el=$('myQuotes');el.replaceChildren(node('p','Cargando presupuestos…'));const {data,error}=await db.rpc('my_intake_quotes');el.replaceChildren();if(error)return notice('No se pudieron consultar los presupuestos: '+error.message);if(!data?.length)return el.append(node('p','Aún no hay presupuestos para decidir.'));for(const q of data){const item=node('article',undefined,'record');item.append(node('strong',q.public_scope||'Presupuesto'),node('p','Total: '+money(q.total_clp)),node('small','Estado: '+({offered:'Pendiente de aprobación',approved:'Aprobado',rejected:'Rechazado'}[q.quote_status]||q.quote_status)));const print=node('button','Imprimir presupuesto','secondary');print.addEventListener('click',()=>{const r=window.open('','_blank');if(!r)return notice('Permite ventanas emergentes para imprimir.');const pre=r.document.createElement('pre');pre.textContent=quoteText(q,{plate:'Consultar solicitud',customer_name:currentUser.email});r.document.body.append(pre);r.document.title='Presupuesto Tato Soluciones';r.print();});item.append(print);if(q.quote_status==='offered'){const actions=node('div',undefined,'actions');for(const [approve,title] of [[true,'Aprobar'],[false,'Rechazar']]){const b=node('button',title,approve?'':'secondary');b.addEventListener('click',async()=>{if(!confirm(`¿Confirmas que deseas ${approve?'aprobar':'rechazar'} el presupuesto de ${money(q.total_clp)}?`))return;b.disabled=true;const {error}=await db.rpc('decide_intake_quote',{p_request:q.request_id,p_approve:approve});notice(error?'No se pudo registrar tu decisión: '+error.message:'Tu decisión quedó registrada.');await loadQuotes();});actions.append(b);}item.append(actions);}el.append(item);}}
+async function loadQuotes(){if(!currentUser)return;const el=$('myQuotes');el.replaceChildren(node('p','Cargando presupuestos…'));const {data,error}=await db.rpc('my_intake_quotes');el.replaceChildren();if(error)return notice('No se pudieron consultar los presupuestos: '+error.message);if(!data?.length)return el.append(node('p','Aún no hay presupuestos para decidir.'));for(const q of data){const item=node('article',undefined,'record');item.append(node('strong',q.public_scope||'Presupuesto'),node('p','Total: '+money(q.total_clp)),node('small','Estado: '+({offered:'Pendiente de aprobación',approved:'Aprobado',rejected:'Rechazado'}[q.quote_status]||q.quote_status)));const download=node('button','Descargar presupuesto PDF','secondary');
+download.addEventListener('click',()=>{
+ try{
+  const pdf=crearDocumentoTato({tipo:'presupuesto',solicitud:{id:q.request_id,customer_name:currentUser.email},trabajo:q});
+  descargarDocumento(pdf.blob,pdf.filename);
+ }catch(error){notice('No se pudo descargar PDF: '+error.message);}
+});item.append(download);if(q.quote_status==='offered'){const actions=node('div',undefined,'actions');for(const [approve,title] of [[true,'Aprobar'],[false,'Rechazar']]){const b=node('button',title,approve?'':'secondary');b.addEventListener('click',async()=>{if(!confirm(`¿Confirmas que deseas ${approve?'aprobar':'rechazar'} el presupuesto de ${money(q.total_clp)}?`))return;b.disabled=true;const {error}=await db.rpc('decide_intake_quote',{p_request:q.request_id,p_approve:approve});notice(error?'No se pudo registrar tu decisión: '+error.message:'Tu decisión quedó registrada.');await loadQuotes();});actions.append(b);}item.append(actions);}el.append(item);}}
 
 const stageLabels={parts_pending:'Esperando repuestos',repairing:'En reparación',quality_check:'Control de calidad',ready_for_pickup:'Listo para entrega',delivered:'Entregado'};
-async function loadProgress(){if(!currentUser)return;const el=$('myProgress');el.replaceChildren(node('p','Cargando seguimiento…'));const {data,error}=await db.rpc('my_repair_progress');el.replaceChildren();if(error){notice('Seguimiento no disponible: '+error.message);return;}if(!data?.length){el.append(node('p','No tienes reparaciones en curso.'));return;}for(const x of data){const item=node('article',undefined,'record');item.append(node('strong',stageLabels[x.stage]||x.stage));if(x.customer_message)item.append(node('p',x.customer_message));if(x.warranty_until)item.append(node('small','Garantía hasta: '+x.warranty_until));if(x.delivered_at)item.append(node('small','Entregado: '+new Date(x.delivered_at).toLocaleDateString('es-CL')));el.append(item);}}
-$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;const f=$('progressForm');f.reset();if(!id)return;const {data,error}=await db.from('intake_repair_progress').select('*').eq('request_id',id).maybeSingle();if(error){notice(error.message);return;}if(data)for(const k of ['stage','customer_message','internal_notes','warranty_until'])f.elements[k].value=data[k]??'';});
-$('progressForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('workflowRequest').value;if(!id)return notice('Selecciona primero una solicitud');const f=e.target.elements;const payload={request_id:id,stage:f.stage.value,customer_message:f.customer_message.value.trim()||null,internal_notes:f.internal_notes.value.trim()||null,warranty_until:f.warranty_until.value||null};const {error}=await db.from('intake_repair_progress').upsert(payload,{onConflict:'request_id'});notice(error?'No se pudo guardar avance: '+error.message:'Avance de reparación guardado.');});
+async function loadProgress(){if(!currentUser)return;const el=$('myProgress');el.replaceChildren(node('p','Cargando seguimiento…'));const {data,error}=await db.rpc('my_repair_progress_v2');el.replaceChildren();if(error){notice('Seguimiento no disponible: '+error.message);return;}if(!data?.length){el.append(node('p','No tienes reparaciones en curso.'));return;}for(const x of data){const item=node('article',undefined,'record');item.append(node('strong',stageLabels[x.stage]||x.stage));if(x.customer_message)item.append(node('p',x.customer_message));if(x.parts_summary)item.append(node('p','Repuestos: '+x.parts_summary));if(x.parts_eta_at)item.append(node('small','Llegada estimada de repuestos: '+new Date(x.parts_eta_at+'T12:00:00').toLocaleDateString('es-CL')));if(x.estimated_delivery_at)item.append(node('small','Entrega estimada: '+new Date(x.estimated_delivery_at).toLocaleString('es-CL')));if(x.warranty_until)item.append(node('small','Garantía hasta: '+x.warranty_until));if(x.delivered_at)item.append(node('small','Entregado: '+new Date(x.delivered_at).toLocaleDateString('es-CL')));el.append(item);}}
+$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;const f=$('progressForm');f.reset();if(!id)return;const {data,error}=await db.from('intake_repair_progress').select('*').eq('request_id',id).maybeSingle();if(error){notice(error.message);return;}if(data)for(const k of ['stage','customer_message','internal_notes','parts_summary','parts_eta_at','warranty_until'])f.elements[k].value=data[k]??'';if(data?.estimated_delivery_at)f.elements.estimated_delivery_at.value=dateLocal(data.estimated_delivery_at);});
+$('progressForm').addEventListener('submit',async e=>{e.preventDefault();const id=$('workflowRequest').value;if(!id)return notice('Selecciona primero una solicitud');const {data:approved,error:statusError}=await db.from('intake_workflow').select('quote_status').eq('request_id',id).maybeSingle();if(statusError||approved?.quote_status!=='approved')return notice('El seguimiento solo se habilita cuando el cliente haya aprobado el presupuesto.');const f=e.target.elements;const payload={request_id:id,stage:f.stage.value,customer_message:f.customer_message.value.trim()||null,parts_summary:f.parts_summary.value.trim()||null,parts_eta_at:f.parts_eta_at.value||null,estimated_delivery_at:f.estimated_delivery_at.value?isoLocal(f.estimated_delivery_at.value):null,internal_notes:f.internal_notes.value.trim()||null,warranty_until:f.warranty_until.value||null};const {error}=await db.from('intake_repair_progress').upsert(payload,{onConflict:'request_id'});notice(error?'No se pudo guardar avance: '+error.message:'Avance de reparación guardado.');});
 
 // Customer-scoped history: no global plate lookup. Every record comes from the authenticated user's own request query.
 async function loadHistory(){
@@ -211,20 +268,34 @@ async function loadHistory(){
  if(!data?.length)return el.append(node('p','Aún no hay atenciones registradas.'));
  for(const x of data){const article=node('article',undefined,'record');article.append(node('strong',`${x.plate||'Sin patente'} · ${x.make||''} ${x.model||''}`),node('small',new Date(x.created_at).toLocaleDateString('es-CL')),node('p',x.complaint),node('small',labels[x.status]||x.status));el.append(article);}
 }
-function printableDocument(type){
- const id=$('workflowRequest').value;if(!id)return notice('Selecciona una solicitud antes de imprimir.');
- const selected=$('workflowRequest').selectedOptions[0]?.textContent||'';
- const fields=[['Kilometraje al ingreso',$('docOdometer').value],['Combustible',$('docFuel').value],['Daños y estado visual',$('docDamage').value],['Llaves y accesorios',$('docItems').value]];
- const win=window.open('','_blank');if(!win)return notice('Habilita ventanas emergentes para imprimir.');
- const root=win.document.createElement('main');root.style.cssText='font:16px Arial;max-width:720px;margin:40px auto;line-height:1.65';
- const heading=win.document.createElement('h1');heading.textContent='TATO SOLUCIONES — '+(type==='reception'?'ACTA DE RECEPCIÓN':'ACTA DE ENTREGA');root.append(heading);
- for(const [label,value] of [['Solicitud',selected],['Fecha de impresión',new Date().toLocaleString('es-CL',{timeZone:'America/Santiago'})],...fields]){const p=win.document.createElement('p');const b=win.document.createElement('strong');b.textContent=label+': ';p.append(b,win.document.createTextNode(value||'________________'));root.append(p);}
- const msg=win.document.createElement('p');msg.textContent=type==='reception'?'Observaciones adicionales y conformidad del estado de ingreso:':'Trabajos entregados, pruebas realizadas, observaciones y conformidad del cliente:';root.append(msg);
- for(const label of ['Firma responsable del taller','Firma cliente','Fecha y hora efectiva']){const p=win.document.createElement('p');p.style.marginTop='35px';p.textContent=label+': ______________________________________';root.append(p);}
- const note=win.document.createElement('small');note.textContent='Documento para completar, revisar y firmar. Imprimir no registra una recepción ni entrega en la base de datos.';root.append(note);win.document.body.append(root);win.document.title=heading.textContent;win.print();
+async function prepararActaDigital(type){
+ const id=$('workflowRequest').value;
+ if(!id)throw Error('Selecciona una solicitud para generar su documento.');
+ const {data:req,error}=await db.from('service_requests')
+  .select('id,customer_name,customer_phone,customer_email,plate,make,model,model_year,odometer_km,complaint,priority')
+  .eq('id',id).single();
+ if(error)throw Error('No se pudo leer la solicitud: '+error.message);
+ const campos=[
+  {label:'Kilometraje al ingreso',value:$('docOdometer').value||'No informado'},
+  {label:'Combustible al ingreso',value:$('docFuel').value||'No informado'},
+  {label:'Estado visual / daños',value:$('docDamage').value||'No informado'},
+  {label:'Llaves y accesorios',value:$('docItems').value||'No informado'}
+ ];
+ return {pdf:crearDocumentoTato({tipo:type,solicitud:req,campos}),req};
 }
-$('printReception').addEventListener('click',()=>printableDocument('reception'));
-$('printDelivery').addEventListener('click',()=>printableDocument('delivery'));
+for(const [buttonId,type] of [['printReception','recepcion'],['printDelivery','entrega']]){
+ $(buttonId).addEventListener('click',async()=>{
+  const button=$(buttonId);button.disabled=true;
+  try{
+   const {pdf,req}=await prepararActaDigital(type);
+   const container=$('docFiles');container.replaceChildren();
+   container.append(node('strong','Documento listo: '+pdf.filename));
+   montarAccionesDocumento(container,pdf,{phone:req.customer_phone,message:'Tato Soluciones: adjuntamos el registro digital de '+(type==='recepcion'?'recepción':'entrega')+' del vehículo.'});
+   notice('Archivo digital preparado. No necesitas impresora.');
+  }catch(error){notice('No se pudo generar el documento: '+error.message);}
+  finally{button.disabled=false;}
+ });
+}
 
 /* V18: Actualiza la bandeja cuando se detecten nuevas solicitudes, con el panel abierto. */
 let expressPollLastCount=null;

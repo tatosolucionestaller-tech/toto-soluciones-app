@@ -8,7 +8,9 @@
 .quote-panel{background:white;border-radius:0 0 14px 14px;padding:28px 32px;box-shadow:0 12px 35px #1117}.quote-panel h1{font:800 clamp(28px,5vw,42px)/1.07 'Barlow Condensed',Impact,sans-serif;color:#17232c;margin:10px 0}.quote-panel p{color:#56646f}.quote-kicker{font-size:11px;font-weight:800;letter-spacing:1.7px;color:#c7151c}.quote-description{white-space:pre-line;background:#f3f5f6;padding:16px;border-radius:9px;line-height:1.55}.quote-values{margin:15px 0 22px;border-top:1px solid #dae0e3}.quote-values>div{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #dae0e3}.quote-values .quote-total{font-size:21px;font-weight:800;color:#151e26}.quote-values .quote-total strong{color:#cd121b}.quote-decisions{margin-top:28px;border-top:1px solid #e4e7e9;padding-top:22px}
 .quote-decisions label{display:flex;align-items:flex-start;gap:10px;font-size:13px;line-height:1.5}.quote-decisions input{margin-top:4px;accent-color:#c91419}.quote-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.quote-actions button{width:100%;min-height:52px}.quote-actions .reject{background:#edf0f3;color:#28343e}.quote-result{padding:18px;background:#eff8f1;border-left:4px solid #198048;border-radius:8px;margin:18px 0}.quote-activate{margin-top:16px}.quote-activate a{display:block;padding:15px;background:#cc1219;color:white!important;text-align:center;font-weight:800;border-radius:8px}.quote-info{font-size:12px}.quote-status{min-height:25px;color:#9c1e20;font-size:13px}.quote-footer{text-align:center;font-size:12px;color:#72808b;margin:22px}
 @media(max-width:520px){.quote-photo{height:145px}.quote-panel{padding:23px 19px}.quote-actions{grid-template-columns:1fr}}
-</style></head><body class="quote-page">
+.quote-document-actions{display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin-top:22px}
+.quote-document-actions button{flex:1 1 190px;min-height:46px}
+.quote-document-actions .quote-info{flex:0 0 100%}</style></head><body class="quote-page">
 <header class="quote-top"><div class="quote-top-inner"><img src="logo-tato.jpg" alt="Tato Soluciones"><span class="quote-kicker">PRESUPUESTO DE ATENCIÓN</span></div></header>
 <main class="quote-container"><div class="quote-photo" role="img" aria-label="Tato Soluciones, taller automotriz"></div>
 <article class="quote-panel">
@@ -25,7 +27,7 @@
 <div class="quote-total"><span>Total presupuestado</span><strong id="total"></strong></div>
 </div>
 <p class="quote-info" id="expiry"></p>
-<section id="decisions" class="quote-decisions">
+<div class="quote-document-actions"><button id="download_quote" type="button">Descargar PDF del presupuesto</button><button id="share_quote" class="reject" type="button">Compartir PDF</button><p class="quote-info">Puedes guardar el documento o compartirlo desde tu teléfono sin imprimirlo.</p></div><section id="decisions" class="quote-decisions">
 <h2>¿Autorizas estos trabajos?</h2>
 <label><input id="confirm_owner" type="checkbox"> Confirmo que estoy autorizado para decidir sobre este vehículo y que revisé el trabajo y el monto total.</label>
 <div class="quote-actions"><button id="accept" type="button">✓ Aprobar presupuesto</button><button id="reject" class="reject" type="button">Rechazar</button></div>
@@ -39,4 +41,4 @@
 </section>
 <p id="status_message" class="quote-status" role="status" aria-live="polite"></p>
 </article><p class="quote-footer">Tato Soluciones · Arica · Este enlace tiene una vigencia limitada</p></main>
-<script type="module" src="presupuesto.js"></script></body></html>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js" referrerpolicy="no-referrer"></script><script type="module" src="presupuesto.js"></script></body></html>

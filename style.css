@@ -78,3 +78,12 @@ body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 #staff .record .record-step{margin:13px 0;padding:12px 14px;border:1px solid #dfe4e9;border-radius:9px;background:#f7f9fa;color:#3c4954;font-size:13px;line-height:1.55}
 #staff .record button.secondary{display:block;width:100%;max-width:100%;padding:14px 12px;white-space:normal;text-align:center;margin-top:12px}
 @media(max-width:560px){#staff .record .staff-whatsapp{display:flex;width:max-content;max-width:100%}}
+
+/* v22: descarga digital y ficha de atención */
+#staff .pdf-packet,#staff .quote-share,#docFiles{padding:15px;margin:14px 0;border-radius:10px;background:#f5f8fa;border:1px solid #d7e1e7}
+#staff .pdf-packet strong,#docFiles>strong{display:block;font-size:14px;overflow-wrap:anywhere}
+#staff .pdf-actions,#docFiles .pdf-actions,.quote-share .pdf-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+#staff .pdf-actions button,#docFiles .pdf-actions button,.quote-share .pdf-actions button{flex:1 1 190px;padding:12px 10px;white-space:normal;font-size:14px}
+#staff .pdf-share,#docFiles .pdf-share,.quote-share .pdf-share{background:#157c48!important;color:white!important}
+#staff .pdf-instructions,#docFiles .pdf-instructions{display:block;font-size:12px;line-height:1.5;color:#617080;margin-top:10px}
+#staff .pdf-error{color:#b91c1c;font-size:13px}
