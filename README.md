@@ -1,24 +1,63 @@
-# Tato Soluciones PWA — primera versión web
+# Tato Soluciones — Control Center y atención digital
 
-## Estado
-Interfaz móvil real para registro/inicio de sesión, envío de solicitudes, consulta de solicitudes propias y bandeja del taller con transiciones permitidas. Usa la tabla `service_requests` del proyecto Supabase Tato Soluciones y sus políticas RLS. No se ha desplegado públicamente.
+Aplicación web para talleres automotrices. Repositorio de trabajo de Tato Soluciones (Arica, Chile). La versión de código más reciente es **V31** (26 de noviembre de 2026).
 
-## Configurar y publicar
-1. Editar `config.js` con `SUPABASE_URL` y clave **pública publishable/anon** del proyecto correcto. Nunca colocar `service_role` ni secretos.
-2. Servir los archivos mediante HTTPS (hosting estático). Para probar localmente: `python3 -m http.server 8080` y abrir `http://localhost:8080` (el service worker solo se activa en HTTPS).
-3. En Supabase Auth configurar URL del sitio, redirecciones de recuperación y confirmación de correo. Probar flujo de cambio de contraseña antes de producción; el enlace de recuperación aún requiere pantalla específica para actualizar la clave.
-4. Configurar CAPTCHA/antibot, protección de contraseñas filtradas, límites de registro y políticas de privacidad.
-5. Verificar en dispositivos reales: cuenta cliente A no lee cliente B, cuenta sin rol no ve taller, usuario staff puede cambiar estados permitidos y no otros; inspeccionar permisos SQL y pruebas E2E.
+## Enlaces y arquitectura
 
-## Limitaciones actuales
-Fecha preferida NO reserva cupo. No hay todavía OCR de padrón, archivos, cotización automática de proveedores, pagos, aprobación digital, recordatorios, PDF, bitácora de taller ni agenda de cinco puestos. El frontend es una base web funcional condicionada a configuración y pruebas reales. No enviar datos reales hasta completar las pruebas de seguridad.
+- Página de solicitud sin registro: https://tato-soluciones.pages.dev/solicitud.html
+- Acceso de cliente y Control Center: https://tato-soluciones.pages.dev/app-real.html
+- Enlace temporal de aprobación: \`presupuesto.html?token=...\`
+- Hosting previsto: Cloudflare Pages desde la rama \`main\`. El despliegue y DNS de \`tatosoluciones.cl\` requieren validación en el panel de Cloudflare.
+- Backend: proyecto Supabase \`kqevyqimwnbylrixpjga\` (Postgres, Auth, Storage y Edge Functions).
+- Node 22 en GitHub Actions verifica sintaxis, cálculos y referencias HTML.
 
-## Flujo de atención v3 (09-10-2026)
-Panel del taller: selecciona solicitud, reserva inicio/fin y puesto, escribe diagnóstico y pruebas, crea borrador y ofrece presupuesto. Cliente: consulta presupuestos, aprueba o rechaza mediante RPC autenticada. Costos internos no se incluyen en la RPC pública. Requiere migraciones aplicadas al proyecto exclusivo Tato Soluciones. Aún faltan integración con las tablas históricas de citas/órdenes, lectura de padrón, PDF, proveedores, notificaciones y pruebas E2E. No desplegada.
+## Flujo comercial actual
 
-## Versión 4 - validaciones y recuperación (09-10-2026)
-- Recuperación de contraseña con formulario de actualización posterior a evento PASSWORD_RECOVERY de Supabase Auth. Requiere configurar redirección y probar con cuenta real.
-- Horarios de reserva validados en zona America/Santiago, lunes a viernes 08:30-17:00, sin reservas de más de 12 horas. La base de datos aún no aplica esta validación horaria; el control de concurrencia por puesto sí está en la base de datos.
-- Impresión local de resumen de presupuesto para consulta. No es factura ni PDF oficial, y todavía no contiene número tributario ni firma.
-- 4 pruebas unitarias nuevas, todas aprobadas. No se han probado usuarios reales ni el despliegue.
-- Se intentó ampliar el esquema de progreso de reparación, pero la herramienta bloqueó la migración; NO se aplicó y NO se incluye como funcionalidad operativa.
+1. Cliente envía Solicitud Express o Tato registra una llamada.
+2. Recepción programa el diagnóstico y el puesto; prepara el prediagnóstico.
+3. Tato busca repuestos en Mercado Libre Chile, registra costos y genera presupuesto.
+4. Cliente aprueba/rechaza mediante enlace privado de 7 días (no equivale a firma electrónica avanzada).
+5. Personal confirma recepción e inspección física, vincula cliente y vehículo y genera orden.
+6. Personal gestiona repuestos, avance de la reparación, fechas estimadas y entrega.
+7. Tato registra dinero efectivamente recibido por orden, devoluciones/anulaciones y resúmenes/cierres diarios.
+8. El expediente \`tato-expedientes\` conserva PDF e imágenes privadas, versionadas por solicitud. El cliente puede consultar solo los archivos marcados como compartidos después de activar su cuenta.
+
+## Protección de datos
+
+- La clave pública del navegador es de tipo publishable/anon; jamás subir \`service_role\` ni claves de proveedores al repositorio.
+- Storage tiene RLS y bucket privado. Los documentos archivados requieren autorización staff; los clientes están limitados a documentos compartidos vinculados a su usuario.
+- El correo automático usa una Edge Function con autorización del personal. Nunca incluir secretos en JS del navegador.
+- Los PDF generados en navegador deben archivarse explícitamente para conservar versión. WhatsApp y correo manual requieren confirmación de envío.
+- Los comprobantes internos **no son documentos tributarios del SII**.
+- El aviso \`privacidad.html\` requiere validación del responsable legal del taller.
+
+## Funciones Edge
+
+- \`express-intake\`: captura pública restringida.
+- \`express-quote\`: enlace temporal, aprobación, rechazo y vinculación del cliente.
+- \`tato-phone-intake\`: recepción autenticada desde una llamada.
+- \`tato-email-document\`: PDF adjunto al email (requiere proveedor).
+- \`tato-parts-search\`: búsqueda autorizada de productos Mercado Libre o búsqueda asistida.
+- \`tato-setup-status\`: muestra a la administración si están disponibles las configuraciones de proveedores y el almacenamiento privado.
+
+## Variables externas necesarias para operación completa
+
+En secretos del proyecto Supabase, **nunca aquí en GitHub ni por chat**:
+- \`RESEND_API_KEY\`: clave privada del proveedor de correo.
+- \`TATO_DOCUMENT_FROM\`: remitente verificado del dominio, p. ej. \`Tato Soluciones <atencion@tatosoluciones.cl>\` solo después de crear y verificar ese remitente.
+- \`MERCADOLIBRE_ACCESS_TOKEN\`: token autorizado de Mercado Libre, sujeto a expiración; requiere un procedimiento de renovación para disponibilidad estable.
+
+El dominio \`tatosoluciones.cl\` debe asociarse y validarse en Cloudflare Pages, con sus registros DNS y certificado correspondiente. Las protecciones de Auth (contraseñas filtradas y rutas de redirección) requieren revisión en el panel Supabase.
+
+## Pruebas
+
+\`\`\`sh
+node --test workflow.test.mjs tests/static-integrity.test.mjs
+node --check app.js
+\`\`\`
+
+La CI del repositorio ejecuta ambas. También se probaron transacciones reversibles de recepción telefónica, presupuesto, aprobación, creación de orden, progresos y entrega; no sustituyen una prueba con cuenta real de cliente y staff en los dispositivos previstos.
+
+## Limitaciones pendientes
+
+Consultar [ESTADO_PRODUCCION.md](ESTADO_PRODUCCION.md). No declarar "100% operativo" sin pruebas de instalación/publicación, correo, navegación del cliente, almacenamiento de archivos reales, autorizaciones, caja y cierre con los usuarios responsables.

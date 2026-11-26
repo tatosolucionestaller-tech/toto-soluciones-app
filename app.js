@@ -282,6 +282,36 @@ async function issueExpressQuote(item,box){
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
+async function checkTatoIntegrations(){
+ const el=$('integrationStatus'),button=$('checkIntegrations');
+ if(!db||!isStaff||!currentUser)return;
+ button.disabled=true;el.replaceChildren(node('p','Comprobando servicios…'));
+ try{
+  const {data:{session}}=await db.auth.getSession();
+  if(!session?.access_token)throw Error('Tu sesión ha caducado.');
+  const url=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/tato-setup-status';
+  const response=await fetch(url,{method:'POST',cache:'no-store',
+    headers:{'Authorization':'Bearer '+session.access_token,'apikey':SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},
+    body:'{}'});
+  let data={};try{data=await response.json()}catch{}
+  if(!response.ok||!data.ok)throw Error(data.error||'El servicio de comprobación no respondió.');
+  el.replaceChildren();
+  for(const [label,ready] of [
+    ['Expediente privado de Supabase',data.archiveConfigured],
+    ['Correo automático (configuración)',data.emailConfigured],
+    ['API de Mercado Libre (configuración)',data.mercadolibreConfigured]
+  ]){
+    const line=node('div',undefined,'integration-row');
+    line.append(node('span',label),node('strong',ready?'Configurado':'Pendiente',ready?'integration-good':'integration-pending'));
+    el.append(line);
+  }
+  el.append(node('p','Dominio propio y publicación Cloudflare: requieren validación desde el panel de alojamiento. No pueden certificarse desde esta pantalla.','hint'));
+  el.append(node('p','Las conexiones configuradas también deben probarse con un correo, una publicación y un cliente reales.','hint'));
+ }catch(error){el.replaceChildren(node('p','No se pudo comprobar: '+error.message));}
+ finally{button.disabled=false;}
+}
+$('checkIntegrations').addEventListener('click',checkTatoIntegrations);
+
 function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();loadMyDocuments();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();loadRepairOrders();loadCashOrders();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function record(item,staff=false){
