@@ -163,7 +163,7 @@ async function issueExpressQuote(item,box){
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
-function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();}if(tab==='dashboard')loadDashboard();}
+function showTab(tab){if(isStaff && (tab==='mine'||tab==='new'))tab='staff';if(!isStaff && (tab==='staff'||tab==='dashboard'))tab='mine';for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();loadFormalizationStatus();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function record(item,staff=false){
  const wrap=node('article',undefined,'record'+(item.priority==='urgent'?' record-urgent':''));
@@ -171,6 +171,7 @@ function record(item,staff=false){
  heading.append(node('strong',(item.make||'Vehículo')+' '+(item.model||'')+' · '+(item.plate||'Sin patente')));
  if(item.priority==='urgent')heading.append(node('span','PRIORIDAD URGENTE','urgent-badge'));
  if(item.intake_source==='web_express')heading.append(node('span','Solicitud Express','express-badge'));
+ if(item.intake_source==='phone')heading.append(node('span','Recepción telefónica','express-badge'));
  wrap.append(heading,node('small',new Date(item.created_at).toLocaleString('es-CL')+' · '+(labels[item.status]||item.status)),node('p',item.complaint),node('small','Cliente: '+item.customer_name+' · '+item.customer_phone));
  if(item.preferred_at)wrap.append(node('p','Horario solicitado (sin confirmar): '+new Date(item.preferred_at).toLocaleString('es-CL')));
  if(staff){
@@ -189,7 +190,7 @@ function record(item,staff=false){
    finally{pre.disabled=false;}
   });
   wrap.append(pre);
-  if(item.intake_source==='web_express'){
+  if(item.intake_source==='web_express'||item.intake_source==='phone'){
    if(item.quote_status==='offered'){
    const issue=node('button','Crear enlace seguro de presupuesto','secondary');
    issue.type='button';
@@ -270,7 +271,7 @@ async function loadDashboard(){
 }
 
 async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
-async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>x.intake_source==='web_express').map(x=>x.id);
+async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>['web_express','phone'].includes(x.intake_source)).map(x=>x.id);
 if(expressIds.length){
  const {data:budgets,error:budgetError}=await db.from('intake_workflow').select('request_id,quote_status').in('request_id',expressIds);
  if(!budgetError){
@@ -511,7 +512,94 @@ $('partsEstimateForm').addEventListener('submit',async event=>{
 });
 
 async function loadWorkstations(){if(!isStaff)return;const {data,error}=await db.from('workstations').select('id,name,active').eq('active',true).order('id');if(error)return notice(error.message);const sel=$('workstation');sel.replaceChildren(new Option('Sin asignar',''));for(const x of data||[])sel.append(new Option(x.name,x.id));try{await refreshPhoneStations();}catch(e){notice(e.message);}}
-$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;loadPartEstimates();const form=$('workflowForm');form.reset();if(!id)return;const {data,error}=await db.from('intake_workflow').select('*').eq('request_id',id).maybeSingle();if(error)return notice(error.message);if(!data)return;for(const key of ['diagnosis','diagnosis_tests','public_scope','labor_clp','parts_clp','tax_clp','internal_cost_clp','workstation_id'])if(form.elements[key])form.elements[key].value=data[key]??'';form.elements.appointment_at.value=dateLocal(data.appointment_at);form.elements.appointment_end.value=dateLocal(data.appointment_end);$('offerQuote').disabled=data.quote_status!=='draft';updateTotal();});
+$('workflowRequest').addEventListener('change',async()=>{const id=$('workflowRequest').value;loadPartEstimates();loadFormalizationStatus();const form=$('workflowForm');form.reset();if(!id)return;const {data,error}=await db.from('intake_workflow').select('*').eq('request_id',id).maybeSingle();if(error)return notice(error.message);if(!data)return;for(const key of ['diagnosis','diagnosis_tests','public_scope','labor_clp','parts_clp','tax_clp','internal_cost_clp','workstation_id'])if(form.elements[key])form.elements[key].value=data[key]??'';form.elements.appointment_at.value=dateLocal(data.appointment_at);form.elements.appointment_end.value=dateLocal(data.appointment_end);$('offerQuote').disabled=data.quote_status!=='draft';updateTotal();});
+
+/* Fase 1 / V25: vínculo seguro del presupuesto aprobado con orden de reparación. */
+let formalizationNonce=0;
+async function loadFormalizationStatus(){
+ const ticket=++formalizationNonce, id=$('workflowRequest').value;
+ const status=$('formalizationStatus'),btn=$('createRepairOrder'),form=$('formalizationForm');
+ const emailBtn=$('saveGuestEmail');
+ $('formalizationResult').replaceChildren();
+ form.reset();
+ btn.disabled=true;emailBtn.disabled=!id;
+ status.textContent=id?'Revisando aprobación y recepción del vehículo…':'Selecciona una solicitud en la agenda para activar la reparación.';
+ if(!isStaff||!id)return;
+ const [{data:req,error:reqError},{data:w,error:flowError}]=await Promise.all([
+  db.from('service_requests').select('plate,odometer_km,customer_email,intake_source,status').eq('id',id).maybeSingle(),
+  db.from('intake_workflow').select('quote_status,repair_order_id,inspection_id').eq('request_id',id).maybeSingle()
+ ]);
+ if(ticket!==formalizationNonce||$('workflowRequest').value!==id)return;
+ if(reqError||flowError){status.textContent='No pudimos verificar la solicitud. Actualiza e inténtalo nuevamente.';return;}
+ if(!req){status.textContent='No se encontró la solicitud.';return;}
+ form.elements.plate.value=req.plate||'';
+ form.elements.odometer_km.value=req.odometer_km??'';
+ $('guestEmailForm').elements.email.value=req.customer_email||'';
+ emailBtn.disabled=!['phone','web_express'].includes(req.intake_source);
+ if(w?.repair_order_id){
+  btn.disabled=true;
+  status.textContent='La orden de reparación ya fue creada. No es necesario repetir la recepción.';
+  const a=node('p','Orden registrada. La operación evita duplicar una orden existente.','phone-success');
+  $('formalizationResult').append(a);
+  return;
+ }
+ if(w?.quote_status==='approved'){
+  btn.disabled=false;
+  status.textContent='Presupuesto aprobado: registra la inspección física y confirma el ingreso para crear la orden.';
+ }else{
+  btn.disabled=true;
+  status.textContent='Todavía no se puede generar la orden: '+(w?.quote_status==='offered'?'esperando decisión del cliente.':w?.quote_status==='rejected'?'presupuesto rechazado.':'primero prepara, ofrece y consigue la aprobación del presupuesto.');
+ }
+}
+$('formalizationForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ if(!isStaff)return notice('Solo personal autorizado del taller.');
+ const id=$('workflowRequest').value,btn=$('createRepairOrder'),f=e.target.elements;
+ if(!id||btn.disabled)return notice('Selecciona una solicitud con presupuesto aprobado.');
+ if(!$('confirmPhysical').checked)return notice('Confirma que revisaste físicamente el vehículo.');
+ if(!confirm('¿Confirmas que el vehículo ya está en el taller, inspeccionaste su estado y el cliente aprobó el presupuesto? Esta acción abrirá la orden de reparación.'))return;
+ btn.disabled=true;btn.textContent='Creando orden…';
+ try{
+  const plate=f.plate.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const km=Number(f.odometer_km.value);
+  const notes=f.mechanical_notes.value.trim();
+  const fuel=f.fuel_level.value===''?null:Number(f.fuel_level.value);
+  if(!/^[A-Z0-9]{5,8}$/.test(plate)||!Number.isSafeInteger(km)||km<0||km>3000000||notes.length<15||notes.length>2000||fuel!==null&&(!Number.isInteger(fuel)||fuel<0||fuel>100))throw Error('Revisa patente, kilometraje, combustible e inspección.');
+  const {data,error}=await db.rpc('finalize_approved_intake',{
+   p_request_id:id,p_plate:plate,p_odometer_km:km,p_mechanical_notes:notes,
+   p_exterior_notes:f.exterior_notes.value.trim(),p_interior_notes:f.interior_notes.value.trim(),
+   p_fuel_level:fuel,p_confirmed:true
+  });
+  if(error)throw error;
+  const order=Array.isArray(data)?data[0]:data;
+  if(!order?.order_id)throw Error('La base de datos no confirmó una orden.');
+  notice('Orden de reparación '+String(order.order_number)+' registrada correctamente.');
+  await loadStaff();
+  $('workflowRequest').value=id;
+  await loadFormalizationStatus();
+  $('formalizationResult').append(node('strong','Orden de reparación Nº '+order.order_number+' · '+(order.already_exists?'Ya existía':'Creada correctamente'),'phone-success'));
+  loadDashboard();
+ }catch(error){notice('No se pudo crear la orden: '+error.message);}
+ finally{btn.textContent='Crear orden de reparación';if($('workflowRequest').value===id)loadFormalizationStatus();}
+});
+$('guestEmailForm').addEventListener('submit',async e=>{
+ e.preventDefault();if(!isStaff)return;
+ const id=$('workflowRequest').value,btn=$('saveGuestEmail'),f=e.target.elements;
+ if(!id)return notice('Selecciona la solicitud que recibirá el correo.');
+ if(!f.confirmed.checked)return notice('Confirma que recibiste autorización del cliente.');
+ const email=f.email.value.trim().toLowerCase();
+ if(!email)return notice('Ingresa el correo.');
+ btn.disabled=true;
+ try{
+  const {data,error}=await db.rpc('set_guest_intake_email',{p_request_id:id,p_email:email,p_confirmed:true});
+  if(error)throw error;
+  if(!data)throw Error('No se guardó el correo.');
+  notice('Correo registrado. Para activar la cuenta, el cliente debe verificar esa dirección personalmente.');
+  await loadStaff();$('workflowRequest').value=id;await loadFormalizationStatus();
+ }catch(error){notice('No se pudo guardar: '+error.message);}
+ finally{btn.disabled=false;}
+});
+
 function updateTotal(){const f=$('workflowForm').elements;$('quoteTotal').textContent='Total al cliente: '+money(['labor_clp','parts_clp','tax_clp'].reduce((n,k)=>n+Number(f[k].value||0),0));}
 for(const x of ['labor_clp','parts_clp','tax_clp'])$('workflowForm').elements[x].addEventListener('input',updateTotal);updateTotal();
 function workflowPayload(){const f=$('workflowForm').elements;const id=f.request_id.value;if(!id)throw Error('Selecciona una solicitud');const start=f.appointment_at.value,end=f.appointment_end.value,station=f.workstation_id.value;if((start||end||station)&&!(start&&end&&station))throw Error('Completa inicio, fin y puesto, o deja los tres vacíos');if(start&&!validSlot(isoLocal(start),isoLocal(end)))throw Error('Reserva fuera de horario (lunes a viernes 08:30–17:00 Chile) o intervalo inválido');const data={request_id:id,appointment_at:isoLocal(start),appointment_end:isoLocal(end),workstation_id:station?Number(station):null};for(const key of ['diagnosis','diagnosis_tests','public_scope'])data[key]=f[key].value.trim()||null;for(const key of ['labor_clp','parts_clp','tax_clp','internal_cost_clp']){data[key]=Number(f[key].value||0);if(!Number.isSafeInteger(data[key])||data[key]<0)throw Error('Monto inválido');}quoteTotal(data.labor_clp,data.parts_clp,data.tax_clp);return data;}
