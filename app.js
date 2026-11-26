@@ -13,7 +13,35 @@ const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
 function showTab(tab){for(const id of ['new','mine','staff','dashboard']) $(id).hidden=id!==tab;for(const [id,name] of [['tabNew','new'],['tabMine','mine'],['tabStaff','staff'],['tabDashboard','dashboard']]) $(id).classList.toggle('selected',tab===name);if(tab==='mine'){loadMine();loadQuotes();loadProgress();loadHistory();}if(tab==='staff'){loadStaff();loadWorkstations();}if(tab==='dashboard')loadDashboard();}
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
-function record(item,staff=false){const wrap=node('article',undefined,'record');wrap.append(node('strong',`${item.make||'Vehículo'} ${item.model||''} · ${item.plate||'Sin patente'}`),node('small',`${new Date(item.created_at).toLocaleDateString('es-CL')} · ${labels[item.status]||item.status}`),node('p',item.complaint),node('small',`Cliente: ${item.customer_name} · ${item.customer_phone}`));if(item.preferred_at)wrap.append(node('p',`Fecha solicitada: ${new Date(item.preferred_at).toLocaleString('es-CL')}`));if(staff && validTransitions[item.status]?.length){const sel=node('select');sel.append(new Option('Cambiar estado…',''));for(const status of validTransitions[item.status])sel.append(new Option(labels[status],status));sel.addEventListener('change',async()=>{if(!sel.value)return;sel.disabled=true;const {error}=await db.from('service_requests').update({status:sel.value}).eq('id',item.id);notice(error?`No se pudo actualizar: ${error.message}`:'Estado actualizado');await loadStaff();});wrap.append(sel);}return wrap;}
+function record(item,staff=false){
+ const wrap=node('article',undefined,'record'+(item.priority==='urgent'?' record-urgent':''));
+ const heading=node('div',undefined,'record-heading');
+ heading.append(node('strong',(item.make||'Vehículo')+' '+(item.model||'')+' · '+(item.plate||'Sin patente')));
+ if(item.priority==='urgent')heading.append(node('span','PRIORIDAD URGENTE','urgent-badge'));
+ if(item.intake_source==='web_express')heading.append(node('span','Solicitud Express','express-badge'));
+ wrap.append(heading,node('small',new Date(item.created_at).toLocaleString('es-CL')+' · '+(labels[item.status]||item.status)),node('p',item.complaint),node('small','Cliente: '+item.customer_name+' · '+item.customer_phone));
+ if(item.preferred_at)wrap.append(node('p','Horario solicitado (sin confirmar): '+new Date(item.preferred_at).toLocaleString('es-CL')));
+ if(staff){
+  const clean=(item.customer_phone||'').replace(/\D/g,'');
+  if(clean.length>=8){
+   const link=node('a','Responder por WhatsApp','staff-whatsapp');
+   link.href='https://wa.me/'+clean+'?text='+encodeURIComponent('Hola, somos Tato Soluciones. Recibimos tu solicitud y queremos coordinar una atención.');
+   link.target='_blank';link.rel='noopener noreferrer';wrap.append(link);
+  }
+  if(item.customer_email)wrap.append(node('small','Correo: '+item.customer_email));
+ }
+ if(staff && validTransitions[item.status]?.length){
+  const sel=node('select');sel.append(new Option('Cambiar estado…',''));
+  for(const status of validTransitions[item.status])sel.append(new Option(labels[status],status));
+  sel.addEventListener('change',async()=>{
+   if(!sel.value)return;sel.disabled=true;
+   const {error}=await db.from('service_requests').update({status:sel.value}).eq('id',item.id);
+   notice(error?'No se pudo actualizar: '+error.message:'Estado actualizado');
+   await loadStaff();
+  });wrap.append(sel);
+ }
+ return wrap;
+}
 
 /* Control Center: solo consultas RLS, sin datos personales ni credenciales en indicadores. */
 let dashboardLoadNonce=0;
@@ -57,14 +85,14 @@ async function loadDashboard(){
  }
  const data=Object.fromEntries(counts.filter(x=>!x.error).map(x=>[x.key,x.count??0]));
  if(counts.some(x=>x.error))alerts.append(node('p','Algunos indicadores no pudieron consultarse. Revisa permisos y conectividad.'));
- if(data.total===0)alerts.append(node('p','No hay solicitudes registradas. Realiza una prueba de recepción y verifica el correo antes de usar la aplicación con clientes reales.'));
+ if(data.total===0)alerts.append(node('p','No hay solicitudes registradas. Realiza una prueba de recepción Express antes de usar la aplicación con clientes reales.'));
  if(data.pending>0)alerts.append(node('p',data.pending+' solicitud(es) pendiente(s) de revisión.'));
  if(data.quotes>0)alerts.append(node('p',data.quotes+' presupuesto(s) esperando la decisión de los clientes.'));
  if(!alerts.childNodes.length)alerts.append(node('p','Sin alertas operativas según los registros actuales.'));
 }
 
 async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
-async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','No hay solicitudes.'));else data.forEach(item=>list.append(record(item,true)));const picker=$('workflowRequest');const chosen=picker.value;picker.replaceChildren(new Option('Selecciona una solicitud',''));for(const item of data||[])picker.append(new Option(`${item.plate||'Sin patente'} · ${item.customer_name} · ${labels[item.status]||item.status}`,item.id));if(data?.some(x=>x.id===chosen))picker.value=chosen;}
+async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','No hay solicitudes.'));else {data.sort((a,b)=>(a.status==='received'?0:1)-(b.status==='received'?0:1)||(a.priority==='urgent'?0:1)-(b.priority==='urgent'?0:1)||new Date(b.created_at)-new Date(a.created_at));data.forEach(item=>list.append(record(item,true)));}const picker=$('workflowRequest');const chosen=picker.value;picker.replaceChildren(new Option('Selecciona una solicitud',''));for(const item of data||[])picker.append(new Option(`${item.plate||'Sin patente'} · ${item.customer_name} · ${labels[item.status]||item.status}`,item.id));if(data?.some(x=>x.id===chosen))picker.value=chosen;}
 let sessionVersion=0;async function sessionChanged(session){const version=++sessionVersion;currentUser=session?.user||null;isStaff=false;$('tabStaff').hidden=true;$('tabDashboard').hidden=true;$('staff').hidden=true;$('dashboard').hidden=true;$('staffList').replaceChildren();$('mineList').replaceChildren();$('myQuotes').replaceChildren();$('auth').hidden=!!currentUser;$('app').hidden=!currentUser;$('logout').hidden=!currentUser;if(!currentUser)return;const {data}=await db.from('staff_profiles').select('role,active').eq('user_id',currentUser.id).maybeSingle();if(version!==sessionVersion||!currentUser)return;isStaff=!!data?.active;$('tabStaff').hidden=!isStaff;$('tabDashboard').hidden=!isStaff;showTab(isStaff?'dashboard':'mine');}
 if(!configured){$('setup').hidden=false;$('auth').hidden=true;}else{db.auth.getSession().then(({data})=>sessionChanged(data.session));db.auth.onAuthStateChange((event,session)=>{sessionChanged(session);if(event==='PASSWORD_RECOVERY'){$('auth').hidden=false;$('newPasswordForm').hidden=false;notice('Escribe tu nueva contraseña.');}});}
 $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!db)return;const f=new FormData(e.target);const {error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});notice(error?`No se pudo ingresar: ${error.message}`:'Sesión iniciada');});
@@ -113,3 +141,20 @@ function printableDocument(type){
 }
 $('printReception').addEventListener('click',()=>printableDocument('reception'));
 $('printDelivery').addEventListener('click',()=>printableDocument('delivery'));
+
+/* V18: Actualiza la bandeja cuando se detecten nuevas solicitudes, con el panel abierto. */
+let expressPollLastCount=null;
+async function pollNewExpress(){
+ if(!isStaff||!currentUser||document.visibilityState!=='visible'||!db)return;
+ const {count,error}=await db.from('service_requests').select('*',{count:'exact',head:true}).eq('status','received');
+ if(error||typeof count!=='number')return;
+ if(expressPollLastCount!==null&&count>expressPollLastCount){
+  document.title='('+count+') Nuevas solicitudes · Tato Soluciones';
+  if(!$('dashboard').hidden)loadDashboard();
+  if(!$('staff').hidden)loadStaff();
+  notice('Hay solicitudes pendientes de revisión en el taller.');
+ }
+ expressPollLastCount=count;
+}
+setInterval(pollNewExpress,45000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollNewExpress()});

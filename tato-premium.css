@@ -38,3 +38,25 @@
 #verify::before{background-image:url('assets/tato-diagnostico.webp');background-position:45% center}
 @media(max-width:900px){.hero-content{width:62%}.hero-overlay{background:linear-gradient(90deg,rgba(9,13,18,.38),rgba(9,13,18,.90) 65%)}}
 @media(max-width:580px){.hero,.hero-overlay{min-height:520px}.hero{background-position:35% top}.hero-overlay{background:linear-gradient(90deg,rgba(8,12,17,.84),rgba(8,12,17,.78))}.hero-content{width:100%;margin:0}.request-aside::before{background-position:45% center}}
+
+/* v18: Solicitud Express */
+.express-choices,.express-contact{border:0;padding:0;margin:16px 0 24px}
+.express-choices legend,.express-contact legend{font-weight:800;margin-bottom:10px}
+.express-choice{display:flex!important;gap:12px;align-items:flex-start;border:2px solid #dce0e5;border-radius:12px;padding:15px!important;margin:10px 0!important;cursor:pointer;background:#fff}
+.express-choice:has(input:checked){border-color:#d5090d;background:#fff7f7}
+.express-choice input{width:18px!important;height:18px!important;margin:5px 0!important;flex:none;accent-color:#d5090d}
+.express-choice strong{display:block;font-size:16px}.express-choice small{display:block;color:#64717a;font-size:12px;font-weight:400}
+.express-contact{display:flex;gap:15px;flex-wrap:wrap}.express-contact legend{width:100%}
+.express-contact label{display:flex!important;align-items:center;gap:7px;margin:0!important}.express-contact input{width:auto!important;accent-color:#d5090d}
+.safety-message{background:#fff3e8;border-left:4px solid #da7114;padding:12px;color:#815010;border-radius:8px}
+.express-details{margin:24px 0 16px;border:1px solid #dde3e8;border-radius:10px;overflow:hidden;background:#fafbfc}.express-details summary{padding:16px;font-weight:800;cursor:pointer}
+.express-detail-body{padding:4px 16px 16px}.express-detail-body p,.express-clarify{font-size:12px;color:#65717b}
+.express-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.express-consent{display:flex!important;gap:10px;align-items:flex-start;font-size:13px!important}.express-consent input{width:18px!important;height:18px!important;min-width:18px;margin:3px 0!important;accent-color:#d5090d}
+.express-send{width:100%;padding:18px!important;font-size:16px!important}
+.express-success{text-align:center;border-top:5px solid #147a36}.express-success .success-mark{display:grid;place-items:center;background:#e5f3eb;border-radius:50%;color:#147a36;font-size:35px;width:76px;height:76px;margin:0 auto 18px}
+.express-success h3{font-size:37px;font-family:'Barlow Condensed',Impact,sans-serif}
+.receipt-box{background:#eff9f2;border:1px solid #d3e8d9;border-radius:12px;padding:18px;margin:20px 0}.receipt-box span,.receipt-box small{display:block;font-size:12px;color:#586d60}.receipt-box strong{display:block;font-size:25px;color:#116c36;margin:7px 0}.receipt-box small{overflow-wrap:anywhere}
+.express-success .btn,.express-success button{display:flex;width:100%;margin:12px 0}
+.trap-field{position:absolute!important;left:-9999px!important;opacity:0!important;pointer-events:none}
+@media(max-width:580px){.express-grid{grid-template-columns:1fr}.express-choice{padding:12px!important}.receipt-box strong{font-size:21px}}

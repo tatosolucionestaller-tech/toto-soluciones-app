@@ -34,3 +34,12 @@ main .hero::before{background:linear-gradient(90deg,rgba(8,13,18,.1) 0%,rgba(8,1
 
 /* v18: rostro completo de Tato en cabeceras horizontales */
 #staff.card:before,#dashboard.card:before,#mine.card:before{background-position:center top}
+
+/* V18: Control Center con solicitudes urgentes y WhatsApp */
+.record-urgent{border-left:5px solid #c92224!important;background:#fff9f7}
+.record-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.urgent-badge,.express-badge{font-size:11px;font-weight:800;border-radius:999px;padding:4px 9px}
+.urgent-badge{background:#ffebea;color:#ae1c20}
+.express-badge{background:#e7f3ec;color:#147a36}
+.staff-whatsapp{display:inline-flex;padding:10px 15px;background:#15854a;border-radius:8px;color:#fff!important;text-decoration:none!important;font-weight:800;font-size:13px;margin:10px 0}
+.staff-whatsapp:hover{background:#126d3f}
