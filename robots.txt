@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /app-real.html
+Disallow: /presupuesto.html
+Disallow: /demo.html
+Allow: /solicitud.html

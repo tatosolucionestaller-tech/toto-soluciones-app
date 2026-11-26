@@ -97,21 +97,22 @@ async function archiveUpload(requestId,file,{title,documentType,sharedWithCustom
  if(!mime)throw Error('Solo se aceptan PDF, JPG, PNG y WebP.');
  const displayTitle=String(title||'').trim();
  if(displayTitle.length<3||displayTitle.length>180)throw Error('Escribe un título de 3 a 180 caracteres.');
- const {data:previous,error:checkError}=await db.from('tato_documents').select('version')
-  .eq('request_id',requestId).eq('document_type',documentType).order('version',{ascending:false}).limit(1);
- if(checkError)throw Error('No se pudo revisar el historial: '+checkError.message);
- const version=(previous?.[0]?.version||0)+1;
  const extension=({'application/pdf':'pdf','image/jpeg':'jpg','image/png':'png','image/webp':'webp'})[mime];
  const path=requestId+'/'+crypto.randomUUID()+'.'+extension;
  const {error:uploadError}=await db.storage.from(archiveBucket).upload(path,file,{contentType:mime,upsert:false,cacheControl:'3600'});
  if(uploadError)throw Error('No se pudo almacenar el archivo: '+uploadError.message);
- const {error:saveError}=await db.from('tato_documents').insert({
-  request_id:requestId,document_type:documentType,version,title:displayTitle,storage_path:path,
-  mime_type:mime,bytes:file.size,shared_with_customer:Boolean(sharedWithCustomer),recorded_by:currentUser.id
+ const {data,error:saveError}=await db.rpc('tato_register_document',{
+   p_request_id:requestId,p_document_type:documentType,p_title:displayTitle,
+   p_path:path,p_mime_type:mime,p_bytes:file.size,p_shared:Boolean(sharedWithCustomer)
  });
- if(saveError)throw Error('El archivo se subió, pero no se pudo registrar. Notifica al administrador para revisar el expediente: '+saveError.message);
+ if(saveError){
+   const {error:cleanError}=await db.storage.from(archiveBucket).remove([path]);
+   throw Error('No se pudo registrar el expediente: '+saveError.message+(cleanError?' Hay un archivo pendiente de revisión por administración.':''));
+ }
+ const result=Array.isArray(data)?data[0]:data;
+ if(!result?.document_id)throw Error('No se pudo confirmar el registro del archivo.');
  await loadArchiveForRequest();
- return {version,path};
+ return {version:result.document_version,path};
 }
 async function downloadArchiveFile(row){
  const {data,error}=await db.storage.from(archiveBucket).download(row.storage_path);

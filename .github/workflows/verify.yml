@@ -1,0 +1,26 @@
+name: Verificar Tato Soluciones
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Revisar sintaxis
+        run: |
+          node --check app.js
+          node --check solicitud.js
+          node --check presupuesto.js
+          node --check documentos-pdf.js
+          node --check workflow-utils.mjs
+          node --check sw.js
+      - name: Ejecutar pruebas automáticas
+        run: node --test workflow.test.mjs tests/static-integrity.test.mjs
