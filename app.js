@@ -317,7 +317,7 @@ function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefi
 function record(item,staff=false){
  const wrap=node('article',undefined,'record'+(item.priority==='urgent'?' record-urgent':''));
  const heading=node('div',undefined,'record-heading');
- heading.append(node('strong',(item.make||'Vehículo')+' '+(item.model||'')+' · '+(item.plate||'Sin patente')));
+ heading.append(node('strong',(assetLabels[item.asset_type]||'Vehículo')+' · '+(item.make||'')+' '+(item.model||'')+' · '+(item.plate||'Sin patente')));
  if(item.priority==='urgent')heading.append(node('span','PRIORIDAD URGENTE','urgent-badge'));
  if(item.intake_source==='web_express')heading.append(node('span','Solicitud Express','express-badge'));
  if(item.intake_source==='phone')heading.append(node('span','Recepción telefónica','express-badge'));
@@ -419,8 +419,8 @@ async function loadDashboard(){
  if(!alerts.childNodes.length)alerts.append(node('p','Sin alertas operativas según los registros actuales.'));
 }
 
-async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
-async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>['web_express','phone'].includes(x.intake_source)).map(x=>x.id);
+async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,asset_type,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
+async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,asset_type,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source,model_year,odometer_km').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error){list.append(node('p','No se pudieron cargar las solicitudes: '+error.message));return notice('No se pudieron consultar las solicitudes.');}const expressIds=(data||[]).filter(x=>['web_express','phone'].includes(x.intake_source)).map(x=>x.id);
 if(expressIds.length){
  const {data:budgets,error:budgetError}=await db.from('intake_workflow').select('request_id,quote_status').in('request_id',expressIds);
  if(!budgetError){
@@ -499,7 +499,7 @@ $('phoneIntakeForm').addEventListener('submit',async e=>{
   }catch(err){return notice('Horario inválido: '+err.message);}
   station=Number(f.workstation_id.value);
  }
- const payload={request_key:phoneIdempotencyKey,customer_name:name,customer_phone:phone,
+ const payload={request_key:phoneIdempotencyKey,customer_name:name,customer_phone:phone,asset_type:f.asset_type.value,
   customer_email:f.customer_email.value.trim().toLowerCase()||null,plate:f.plate.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||null,
   make:f.make.value.trim()||null,model:f.model.value.trim()||null,model_year:f.model_year.value?Number(f.model_year.value):null,
   complaint,priority:f.priority.value,contact_method:f.contact_method.value,
