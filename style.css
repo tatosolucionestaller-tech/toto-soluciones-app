@@ -71,3 +71,10 @@ body.staff-mode .tabs{margin:10px 0 18px}
 body.staff-mode .tabs button.selected{background:#d5090d}
 body.staff-mode .tabs button:not(.selected){background:#edf0f2;color:#27323a}
 @media(max-width:600px){body.staff-mode main .hero{background-position:32% 15%;padding:28px 22px;min-height:235px}body.staff-mode main .hero::before{background:rgba(9,14,22,.83)}body.staff-mode #staff.card:before{height:75px;margin:-22px -19px 18px}}
+
+/* v21: contacto legible y pasos de presupuesto en bandeja */
+#staff .record .staff-whatsapp{display:inline-flex;max-width:100%;margin:13px 0 5px}
+#staff .record .contact-email{display:block;margin:7px 0 14px;color:#64748b;font-size:13px;overflow-wrap:anywhere}
+#staff .record .record-step{margin:13px 0;padding:12px 14px;border:1px solid #dfe4e9;border-radius:9px;background:#f7f9fa;color:#3c4954;font-size:13px;line-height:1.55}
+#staff .record button.secondary{display:block;width:100%;max-width:100%;padding:14px 12px;white-space:normal;text-align:center;margin-top:12px}
+@media(max-width:560px){#staff .record .staff-whatsapp{display:flex;width:max-content;max-width:100%}}
