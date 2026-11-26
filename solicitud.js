@@ -72,7 +72,7 @@ $('intake').addEventListener('submit',async event=>{
   request_key:requestKey(),priority:priority(),contact_method:selectedContact(),
   customer_name:value('customer_name'),customer_phone:phone,
   customer_email:value('customer_email').toLowerCase(),
-  complaint:value('complaint'),service_type:value('service_type'),
+  complaint:value('complaint'),service_type:value('service_type'),asset_type:value('asset_type'),
   plate:value('plate').toUpperCase().replace(/[^A-Z0-9]/g,''),
   make:value('make'),model:value('model'),model_year:value('model_year'),
   odometer_km:value('odometer_km'),preferred_at:null,website:value('website')
