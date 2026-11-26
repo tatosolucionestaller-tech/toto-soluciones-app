@@ -62,6 +62,7 @@ time.addEventListener('change',()=>{
 });
 document.querySelectorAll('[data-service]').forEach(link=>link.addEventListener('click',()=>{
  $('service_type').value=link.dataset.service||'';
+ if(link.dataset.assetType)$('asset_type').value=link.dataset.assetType;
  $('intake').querySelector('details').open=true;
 }));
 $('intake').addEventListener('submit',async event=>{
