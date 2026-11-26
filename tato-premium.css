@@ -27,7 +27,7 @@
 @media(prefers-reduced-motion:reduce){.service-card{transition:none}.service-card:hover{transform:none}}
 
 /* Tato Soluciones v17 - sesiones con fotografia original de Tato */
-.hero{background-image:url('assets/tato-inicio.webp');background-position:40% center;background-color:#151719}
+.hero{background-image:url('assets/tato-inicio.webp');background-position:40% top;background-color:#151719}
 .hero-overlay{background:linear-gradient(90deg,rgba(10,15,21,.13) 0%,rgba(10,15,21,.25) 36%,rgba(10,15,21,.91) 63%,rgba(10,15,21,.96) 100%)}
 .hero-content{width:min(565px,53%);max-width:100%;margin:0 0 0 auto}
 .service-oil{background-image:url('assets/tato-taller.webp');background-position:29% center}
@@ -37,4 +37,4 @@
 .request-aside::before{background-image:url('assets/tato-atencion.webp');background-position:45% center}
 #verify::before{background-image:url('assets/tato-diagnostico.webp');background-position:45% center}
 @media(max-width:900px){.hero-content{width:62%}.hero-overlay{background:linear-gradient(90deg,rgba(9,13,18,.38),rgba(9,13,18,.90) 65%)}}
-@media(max-width:580px){.hero,.hero-overlay{min-height:520px}.hero{background-position:35% center}.hero-overlay{background:linear-gradient(90deg,rgba(8,12,17,.84),rgba(8,12,17,.78))}.hero-content{width:100%;margin:0}.request-aside::before{background-position:45% center}}
+@media(max-width:580px){.hero,.hero-overlay{min-height:520px}.hero{background-position:35% top}.hero-overlay{background:linear-gradient(90deg,rgba(8,12,17,.84),rgba(8,12,17,.78))}.hero-content{width:100%;margin:0}.request-aside::before{background-position:45% center}}

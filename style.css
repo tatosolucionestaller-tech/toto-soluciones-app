@@ -25,9 +25,12 @@ button:not(.secondary):not(.link){background:#d5090d}
 @media(max-width:600px){main .hero{padding:29px 22px;min-height:220px}#staff.card:before,#dashboard.card:before,#mine.card:before{height:120px;margin:-25px -25px 20px}}
 
 /* Tato Soluciones v17 - identidad fotografica en paneles */
-main .hero{background-image:url('assets/tato-taller.webp');background-position:30% center;padding-left:47%;min-height:270px}
+main .hero{background-image:url('assets/tato-taller.webp');background-position:30% top;padding-left:47%;min-height:270px}
 main .hero::before{background:linear-gradient(90deg,rgba(8,13,18,.1) 0%,rgba(8,13,18,.20) 39%,rgba(8,13,18,.91) 60%,rgba(8,13,18,.97) 100%)}
 #staff.card:before{background-image:url('assets/tato-taller.webp');background-position:42% center}
 #dashboard.card:before{background-image:url('assets/tato-diagnostico.webp');background-position:46% center}
 #mine.card:before{background-image:url('assets/tato-atencion.webp');background-position:46% center}
-@media(max-width:600px){main .hero{padding:29px 22px;background-position:32% center;min-height:235px}main .hero::before{background:rgba(9,14,20,.82)}}
+@media(max-width:600px){main .hero{padding:29px 22px;background-position:32% top;min-height:235px}main .hero::before{background:rgba(9,14,20,.82)}}
+
+/* v18: rostro completo de Tato en cabeceras horizontales */
+#staff.card:before,#dashboard.card:before,#mine.card:before{background-position:center top}
