@@ -7,6 +7,7 @@ const configured = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes
 const db = configured ? createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY) : null;
 const notice = text => { $('notice').textContent=text; };
 const validTransitions = {received:['reviewing','cancelled'],reviewing:['appointment_proposed','cancelled'],appointment_proposed:['confirmed','reviewing','cancelled'],confirmed:['in_workshop','cancelled'],in_workshop:['completed'],completed:[],cancelled:[]};
+const assetLabels = {auto:'Auto / vehículo',motorcycle:'Motocicleta',jet_ski:'Moto de agua',boat:'Lancha',sailboat:'Velero'};
 const labels = {received:'Recibida',reviewing:'En revisión',appointment_proposed:'Hora propuesta',confirmed:'Confirmada',in_workshop:'En taller',completed:'Finalizada',cancelled:'Cancelada'};
 let currentUser=null,isStaff=false;
 
