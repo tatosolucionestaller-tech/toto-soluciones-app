@@ -43,3 +43,8 @@ main .hero::before{background:linear-gradient(90deg,rgba(8,13,18,.1) 0%,rgba(8,1
 .express-badge{background:#e7f3ec;color:#147a36}
 .staff-whatsapp{display:inline-flex;padding:10px 15px;background:#15854a;border-radius:8px;color:#fff!important;text-decoration:none!important;font-weight:800;font-size:13px;margin:10px 0}
 .staff-whatsapp:hover{background:#126d3f}
+
+/* V19: enlace seguro de presupuesto desde Control Center */
+.quote-share{padding:14px;border:1px solid #d9e2e7;border-radius:10px;background:#f6f9fb;margin:14px 0;display:flex;flex-direction:column;gap:10px}
+.quote-share strong{font-size:13px}.quote-share input{width:100%;font:13px/1.5 monospace;padding:12px;border:1px solid #cbd4dc;border-radius:6px;overflow:hidden}
+.quote-share button{background:#182630!important;color:white!important;align-self:flex-start}.quote-share .staff-whatsapp{margin:0}

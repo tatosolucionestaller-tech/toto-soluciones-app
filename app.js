@@ -8,6 +8,58 @@ const notice = text => { $('notice').textContent=text; };
 const validTransitions = {received:['reviewing','cancelled'],reviewing:['appointment_proposed','cancelled'],appointment_proposed:['confirmed','reviewing','cancelled'],confirmed:['in_workshop','cancelled'],in_workshop:['completed'],completed:[],cancelled:[]};
 const labels = {received:'Recibida',reviewing:'En revisión',appointment_proposed:'Hora propuesta',confirmed:'Confirmada',in_workshop:'En taller',completed:'Finalizada',cancelled:'Cancelada'};
 let currentUser=null,isStaff=false;
+
+const quoteApi=SUPABASE_URL.replace(/\/$/,'')+'/functions/v1/express-quote';
+const guestClaimStore='tato_claim_approved_quote_v1';
+const claimFromUrl=new URLSearchParams(location.search).get('claim');
+if(claimFromUrl&&/^[a-zA-Z0-9_-]{40,80}$/.test(claimFromUrl)){
+ sessionStorage.setItem(guestClaimStore,claimFromUrl);
+ const cleanUrl=new URL(location.href);cleanUrl.searchParams.delete('claim');
+ history.replaceState(null,'',cleanUrl.pathname+cleanUrl.search+cleanUrl.hash);
+}
+async function expressQuoteAction(action,extra={},jwt=null){
+ const headers={'Content-Type':'application/json','apikey':SUPABASE_PUBLISHABLE_KEY};
+ if(jwt)headers.Authorization='Bearer '+jwt;
+ const response=await fetch(quoteApi,{method:'POST',mode:'cors',cache:'no-store',headers,body:JSON.stringify({action,...extra})});
+ let data={};try{data=await response.json();}catch{}
+ if(!response.ok||!data.ok)throw Error(data.error||'No fue posible realizar esta operación.');
+ return data;
+}
+let claimInProgress=false;
+async function claimApprovedQuote(session){
+ const token=sessionStorage.getItem(guestClaimStore);
+ if(!token||claimInProgress||!session?.access_token||isStaff)return;
+ claimInProgress=true;
+ try {
+  const result=await expressQuoteAction('claim',{token},session.access_token);
+  if(result.claimed){
+   sessionStorage.removeItem(guestClaimStore);
+   notice('¡Tu cuenta está activa! La solicitud Express y el presupuesto ya aparecen en tu historial.');
+   showTab('mine');
+  }
+ }catch(err){notice('Para vincular la solicitud Express: '+err.message);}
+ finally{claimInProgress=false;}
+}
+async function issueExpressQuote(item,box){
+ const {data:{session}}=await db.auth.getSession();
+ if(!session?.access_token)throw Error('Inicia sesión en el panel del taller.');
+ const res=await expressQuoteAction('issue',{request_id:item.id},session.access_token);
+ const share=document.createElement('div');
+ share.className='quote-share';
+ share.append(node('strong','Enlace privado de presupuesto · válido por 7 días'));
+ const input=document.createElement('input');input.readOnly=true;input.value=res.url;input.setAttribute('aria-label','Enlace seguro del presupuesto');share.append(input);
+ const copy=node('button','Copiar enlace','secondary');
+ copy.type='button';
+ copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(res.url);notice('Enlace copiado. Compártelo solo con el cliente.');}catch{input.select();notice('Selecciona el enlace y cópialo manualmente.');}});
+ share.append(copy);
+ const destination=(item.customer_phone||'').replace(/\D/g,'');
+ if(destination.length>=8){
+  const wa=node('a','Enviar presupuesto por WhatsApp','staff-whatsapp');
+  wa.href='https://wa.me/'+destination+'?text='+encodeURIComponent('Hola. Tato Soluciones preparó tu presupuesto. Revísalo y aprueba o rechaza en este enlace privado: '+res.url);
+  wa.target='_blank';wa.rel='noopener noreferrer';share.append(wa);
+ }
+ box.append(share);
+}
 const money=n=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n||0);
 const isoLocal=s=>s?chileLocalToIso(s):null;
 const dateLocal=s=>{if(!s)return '';const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(s));const v=Object.fromEntries(parts.map(x=>[x.type,x.value]));return `${v.year}-${v.month}-${v.day}T${v.hour}:${v.minute}`;};
@@ -29,6 +81,18 @@ function record(item,staff=false){
    link.target='_blank';link.rel='noopener noreferrer';wrap.append(link);
   }
   if(item.customer_email)wrap.append(node('small','Correo: '+item.customer_email));
+  if(item.intake_source==='web_express'){
+   const issue=node('button','Crear enlace seguro de presupuesto','secondary');
+   issue.type='button';
+   issue.addEventListener('click',async()=>{
+    if(!confirm('¿Ya ofreciste el presupuesto de esta solicitud en el Control Center? Se creará un enlace privado válido por 7 días.'))return;
+    issue.disabled=true;
+    try{await issueExpressQuote(item,wrap);issue.textContent='Generar otro enlace (revoca el anterior)';notice('Enlace preparado. Envíaselo únicamente al cliente.');}
+    catch(err){notice(err.message);}
+    finally{issue.disabled=false;}
+   });
+   wrap.append(issue);
+  }
  }
  if(staff && validTransitions[item.status]?.length){
   const sel=node('select');sel.append(new Option('Cambiar estado…',''));
@@ -93,10 +157,10 @@ async function loadDashboard(){
 
 async function loadMine(){const list=$('mineList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone').eq('customer_user_id',currentUser.id).order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','Todavía no tienes solicitudes.'));else data.forEach(item=>list.append(record(item)));}
 async function loadStaff(){if(!isStaff)return;const list=$('staffList');list.replaceChildren(node('p','Cargando…'));const {data,error}=await db.from('service_requests').select('id,make,model,plate,complaint,status,created_at,preferred_at,customer_name,customer_phone,customer_email,priority,contact_method,intake_source').order('created_at',{ascending:false}).limit(100);list.replaceChildren();if(error)return notice(error.message);if(!data?.length)list.append(node('p','No hay solicitudes.'));else {data.sort((a,b)=>(a.status==='received'?0:1)-(b.status==='received'?0:1)||(a.priority==='urgent'?0:1)-(b.priority==='urgent'?0:1)||new Date(b.created_at)-new Date(a.created_at));data.forEach(item=>list.append(record(item,true)));}const picker=$('workflowRequest');const chosen=picker.value;picker.replaceChildren(new Option('Selecciona una solicitud',''));for(const item of data||[])picker.append(new Option(`${item.plate||'Sin patente'} · ${item.customer_name} · ${labels[item.status]||item.status}`,item.id));if(data?.some(x=>x.id===chosen))picker.value=chosen;}
-let sessionVersion=0;async function sessionChanged(session){const version=++sessionVersion;currentUser=session?.user||null;isStaff=false;$('tabStaff').hidden=true;$('tabDashboard').hidden=true;$('staff').hidden=true;$('dashboard').hidden=true;$('staffList').replaceChildren();$('mineList').replaceChildren();$('myQuotes').replaceChildren();$('auth').hidden=!!currentUser;$('app').hidden=!currentUser;$('logout').hidden=!currentUser;if(!currentUser)return;const {data}=await db.from('staff_profiles').select('role,active').eq('user_id',currentUser.id).maybeSingle();if(version!==sessionVersion||!currentUser)return;isStaff=!!data?.active;$('tabStaff').hidden=!isStaff;$('tabDashboard').hidden=!isStaff;showTab(isStaff?'dashboard':'mine');}
+let sessionVersion=0;async function sessionChanged(session){const version=++sessionVersion;currentUser=session?.user||null;isStaff=false;$('tabStaff').hidden=true;$('tabDashboard').hidden=true;$('staff').hidden=true;$('dashboard').hidden=true;$('staffList').replaceChildren();$('mineList').replaceChildren();$('myQuotes').replaceChildren();$('auth').hidden=!!currentUser;$('app').hidden=!currentUser;$('logout').hidden=!currentUser;if(!currentUser)return;const {data}=await db.from('staff_profiles').select('role,active').eq('user_id',currentUser.id).maybeSingle();if(version!==sessionVersion||!currentUser)return;isStaff=!!data?.active;$('tabStaff').hidden=!isStaff;$('tabDashboard').hidden=!isStaff;showTab(isStaff?'dashboard':'mine');if(!isStaff)claimApprovedQuote(session);}
 if(!configured){$('setup').hidden=false;$('auth').hidden=true;}else{db.auth.getSession().then(({data})=>sessionChanged(data.session));db.auth.onAuthStateChange((event,session)=>{sessionChanged(session);if(event==='PASSWORD_RECOVERY'){$('auth').hidden=false;$('newPasswordForm').hidden=false;notice('Escribe tu nueva contraseña.');}});}
 $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!db)return;const f=new FormData(e.target);const {error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});notice(error?`No se pudo ingresar: ${error.message}`:'Sesión iniciada');});
-$('signup').addEventListener('click',async()=>{const f=new FormData($('authForm'));const email=String(f.get('email')||'');const password=String(f.get('password')||'');if(!email||password.length<8)return notice('Ingresa un correo y una contraseña de al menos 8 caracteres.');const {error}=await db.auth.signUp({email,password});notice(error?error.message:'Revisa tu correo para verificar la cuenta, si la confirmación está habilitada.');});
+$('signup').addEventListener('click',async()=>{const f=new FormData($('authForm'));const email=String(f.get('email')||'');const password=String(f.get('password')||'');if(!email||password.length<8)return notice('Ingresa un correo y una contraseña de al menos 8 caracteres.');const claim=sessionStorage.getItem(guestClaimStore);const options=claim?{emailRedirectTo:location.origin+'/app-real.html?claim='+encodeURIComponent(claim)}:undefined;const {error}=await db.auth.signUp({email,password,options});notice(error?error.message:'Revisa tu correo para verificar la cuenta, si la confirmación está habilitada.');});
 $('reset').addEventListener('click',async()=>{const email=String(new FormData($('authForm')).get('email')||'');if(!email)return notice('Escribe tu correo primero.');const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});notice(error?error.message:'Si existe una cuenta, recibirás un correo con instrucciones.');});
 $('newPasswordForm').addEventListener('submit',async e=>{e.preventDefault();const password=String(new FormData(e.target).get('new_password')||'');if(password.length<10)return notice('La contraseña debe tener al menos 10 caracteres.');const {error}=await db.auth.updateUser({password});if(error)return notice('No se pudo actualizar: '+error.message);$('newPasswordForm').hidden=true;notice('Contraseña actualizada.');});
 $('logout').addEventListener('click',()=>db.auth.signOut());$('tabNew').addEventListener('click',()=>showTab('new'));$('tabMine').addEventListener('click',()=>showTab('mine'));$('tabStaff').addEventListener('click',()=>showTab('staff'));$('tabDashboard').addEventListener('click',()=>showTab('dashboard'));$('refreshDashboard').addEventListener('click',()=>loadDashboard());$('dashboardGoStaff').addEventListener('click',()=>showTab('staff'));
