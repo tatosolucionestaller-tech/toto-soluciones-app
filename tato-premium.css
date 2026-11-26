@@ -6,3 +6,22 @@
 
 /* Selector de cita: pasos claros en móvil y escritorio */
 .appointment-picker{background:#f7faf8;border:1px solid #c9ded0;border-radius:12px;padding:20px;margin:20px 0}.appointment-title{display:block;font-size:18px;color:#173e27}.appointment-help{font-size:13px;color:#4c5a51;margin:8px 0 18px}.appointment-picker label{margin-top:15px}.appointment-picker select{min-height:50px;background:white}.appointment-picker select:disabled{background:#edf0ee;color:#737b75}.appointment-summary{background:#e7f3e9;color:#18572e;border-left:4px solid #147a36;padding:12px 14px;border-radius:5px;font-size:13px;font-weight:700;margin:18px 0 10px}.appointment-picker small{display:block;margin-top:7px;line-height:1.5}
+
+/* Tato Soluciones - identidad visual diferenciada por etapa (v16) */
+.service-card{background-color:#101920;background-image:url('assets/banner-mecanica.svg');background-position:center;background-size:cover;transition:transform .25s ease,box-shadow .25s ease}
+.service-card:hover,.service-card:focus-visible{transform:translateY(-4px);box-shadow:0 16px 34px #0003}
+.service-oil{background-image:url('assets/banner-mecanica.svg');background-position:66% center}
+.service-brakes{background-image:url('assets/banner-mecanica.svg');background-position:75% center}
+.service-diagnostic{background-image:url('assets/banner-diagnostico.svg');background-position:72% center}
+.service-tires{background-image:url('assets/banner-atencion.svg');background-position:72% center}
+.request-section{background:linear-gradient(115deg,#ecf0f2 0%,#f5f6f7 65%)}
+.request-aside::before{content:'';display:block;height:195px;border-radius:14px;background:#182129 url('assets/banner-atencion.svg') 69% 46%/cover no-repeat;box-shadow:0 12px 34px #0002;margin-bottom:23px}
+.form-card#verify{overflow:hidden;border-top:5px solid var(--red)}
+#verify::before{content:'';display:block;height:188px;margin:-30px -30px 22px;background:#101820 url('assets/banner-diagnostico.svg') 73% 50%/cover no-repeat}
+#verify h3{font-family:'Barlow Condensed',Impact,sans-serif;font-size:31px}
+#verify .verify-actions button{min-height:49px}
+#verify .verify-actions button:first-child{background:var(--red)}
+.status-card{border-left:4px solid var(--green)}
+@media(max-width:900px){.request-aside::before{max-width:700px}}
+@media(max-width:580px){.request-aside::before{height:140px}#verify::before{height:138px;margin:-20px -16px 19px}.service-card{background-position:70% center}}
+@media(prefers-reduced-motion:reduce){.service-card{transition:none}.service-card:hover{transform:none}}
