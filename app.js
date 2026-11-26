@@ -7,7 +7,7 @@ const configured = SUPABASE_URL.startsWith('https://') && !SUPABASE_URL.includes
 const db = configured ? createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY) : null;
 const notice = text => { $('notice').textContent=text; };
 const validTransitions = {received:['reviewing','cancelled'],reviewing:['appointment_proposed','cancelled'],appointment_proposed:['confirmed','reviewing','cancelled'],confirmed:['in_workshop','cancelled'],in_workshop:['completed'],completed:[],cancelled:[]};
-const assetLabels = {auto:'Auto / vehículo',motorcycle:'Motocicleta',jet_ski:'Moto de agua',boat:'Lancha',sailboat:'Velero'};
+const assetLabels = {auto:'Auto / vehículo',motorcycle:'Motocicleta',jet_ski:'Moto de agua',boat:'Lancha',sailboat:'Velero',generator:'Equipo electrógeno industrial',large_engine:'Motor de gran tamaño'};
 const labels = {received:'Recibida',reviewing:'En revisión',appointment_proposed:'Hora propuesta',confirmed:'Confirmada',in_workshop:'En taller',completed:'Finalizada',cancelled:'Cancelada'};
 let currentUser=null,isStaff=false;
 
@@ -500,7 +500,7 @@ $('phoneIntakeForm').addEventListener('submit',async e=>{
   }catch(err){return notice('Horario inválido: '+err.message);}
   station=Number(f.workstation_id.value);
  }
- const payload={request_key:phoneIdempotencyKey,customer_name:name,customer_phone:phone,asset_type:f.asset_type.value,
+ const payload={request_key:phoneIdempotencyKey,customer_name:name,customer_phone:phone,asset_type:f.asset_type.value,service_type:f.service_type.value,
   customer_email:f.customer_email.value.trim().toLowerCase()||null,plate:f.plate.value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||null,
   make:f.make.value.trim()||null,model:f.model.value.trim()||null,model_year:f.model_year.value?Number(f.model_year.value):null,
   complaint,priority:f.priority.value,contact_method:f.contact_method.value,
